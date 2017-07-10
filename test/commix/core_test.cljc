@@ -61,7 +61,7 @@
             :c {:cx/key ::abc}
             ::d {}})
          {:a {:cx/key :commix.core-test/abc},
-          :b {:cx/key :commix.core/simple-component},
+          :b {:cx/key :cx/identity},
           :c {:cx/key :commix.core-test/abc},
           :commix.core-test/d {:cx/key :commix.core-test/d}})))
 
@@ -418,6 +418,27 @@
             [:a :b] [:on],
             [:a :c] [:on]}))))
 
+
+(deftest com-expands-in-quoted-configs-test
+  (let [com-config {:param 1}]
+
+    (is (=
+          (cx/init {:A (cx/com :ns/name {:param 1})})
+          (cx/init '{:A (cx/com :ns/name {:param 1})})
+          (cx/init '{:A (cx/com :ns/name com-config)})
+          (cx/init {:A '(cx/com :ns/name {:param 1})})
+          (cx/init {:A '(cx/com :ns/name com-config)})
+          (cx/init {:A (cx/com :ns/name 'com-config)})
+          (cx/init (read-string "{:A (cx/com :ns/name {:param 1})}"))))
+
+    (is (=
+          (#'cx/expand-coms {:A (cx/com :ns/name {:param 1})})
+          (#'cx/expand-coms '{:A (cx/com :ns/name {:param 1})})
+          (#'cx/expand-coms '{:A (cx/com :ns/name com-config)})
+          (#'cx/expand-coms {:A '(cx/com :ns/name {:param 1})})
+          (#'cx/expand-coms {:A '(cx/com :ns/name com-config)})
+          (#'cx/expand-coms {:A (cx/com :ns/name 'com-config)})
+          (#'cx/expand-coms (read-string "{:A (cx/com :ns/name {:param 1})}"))))))
 
 
 (comment

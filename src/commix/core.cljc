@@ -53,7 +53,7 @@
         new-obj (f (:cx/key com) (:cx/obj com))]
     (assoc-in system (conj com-path :cx/obj) new-obj)))
 
-(defn system-objects [system]
+(defn objects [system]
   (into (sorted-map)
         (map #(vector % (get-in system (conj % :cx/obj)))
              (system-nodes system))))
@@ -101,7 +101,7 @@
     (if (com? x)
       (if (= (count x) 3)
         (second x)
-        ::simple-component)
+        :cx/identity)
       (throw (IllegalArgumentException. (format "Invalid com: %s" x))))))
 
 (defn- com-conf [x]
@@ -276,8 +276,7 @@
   (fn [key value] key))
 
 (declare init)
-(defmethod init-key ::simple-component [_ v] v)
-(defmethod init-key ::system [_ config] (init config))
+(defmethod init-key :cx/identity [_ v] v)
 
 
 (defmulti halt-key
@@ -476,7 +475,7 @@ is thrown if this condition is not satisfied."}
       (init-com com-path)))
 
 
-;;; LIFE CYCLE
+;;; LIFE CYCLE ACTIONS
 
 (defn init
   "Turn config into a system map.
