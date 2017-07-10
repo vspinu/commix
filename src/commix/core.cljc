@@ -74,15 +74,16 @@
   {:style/indent :defn}
   ([config] (cond
               (keyword? config) (com config {})              
-              (map? config)     (com ::simple-component config)
-              :else (throw (ex-info "Invalid config argument. Must be a map or a keyword." {:config config}))))
+              (map? config)     (com :cx/identity config)
+              :else             (throw (ex-info "Invalid config argument. Must be a map or a keyword." {:config config}))))
   ([key config]
    (cond
-     (symbol? key)  (com (resolve key) config)
-     (map? key)     (com ::simple-component key config)
-     (keyword? key) (into (sorted-map)
-                          (assoc config :cx/key key))
-     :else          (throw (ex-info "Invalid key object supplied." {:key key :config config}))))
+     (symbol? key)    (com (var-get (resolve key)) config)
+     (symbol? config) (com key (var-get (resolve config)))
+     (map? key)       (com :cx/identity key config)
+     (keyword? key)   (into (sorted-map)
+                            (assoc config :cx/key key))
+     :else            (throw (ex-info "Invalid key object supplied." {:key key :config config}))))
   ([key config merge-config]
    (merge (com key config) merge-config)))
 
