@@ -171,11 +171,11 @@
     (is (= (-> config
                (cx/init)
                (cx/halt [[:sys2 :quax]])
-               (cx/system-objects))
+               (cx/icoms))
            (-> quote-config
                (cx/init)
                (cx/halt [[:sys2 :quax]])
-               (cx/system-objects))
+               (cx/icoms))
            {[:sys]        [:on],
             [:sys2]       [:stopped],
             [:sys3]       [:on],
@@ -189,11 +189,11 @@
     (is (= (-> config
                (cx/init)
                (cx/halt [[:sys2 :quax] :sys4])
-               (cx/system-objects))
+               (cx/icoms))
            (-> config
                (cx/init)
                (cx/halt [[:sys2 :quax] :sys4])
-               (cx/system-objects))
+               (cx/icoms))
            {[:sys]        [:on],
             [:sys2]       [:stopped],
             [:sys3]       [:on],
@@ -411,7 +411,7 @@
     (def config config)
     (is (= (-> config
                (cx/init)
-               (cx/system-objects))
+               (cx/icoms))
            {[:d]    {:k [[:on] [:on]]
                      :l {:b [:on]
                          :c [:on]}},

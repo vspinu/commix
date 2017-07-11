@@ -44,22 +44,28 @@
                   fmap
                   v)))))
 
-(defn- system-nodes [system]
-  (set/difference (dep/nodes (-> system meta ::graph))
-                  #{::ROOT}))
-
-(defn update-obj-in [system com-path f]
+(defn- update-obj-in [system com-path f]
   (let [com     (get-in system com-path)
         new-obj (f (:cx/key com) (:cx/obj com))]
     (assoc-in system (conj com-path :cx/obj) new-obj)))
 
-(defn objects [system]
+(defn nodes
+  "Get all component names from the system graph."
+  [system]
+  (set/difference (dep/nodes (-> system meta ::graph))
+                  #{::ROOT}))
+
+(defn icoms
+  "Get a flat map of instantiated components from the system map."
+  [system]
   (into (sorted-map)
         (map #(vector % (get-in system (conj % :cx/obj)))
-             (system-nodes system))))
+             (nodes system))))
 
-(defn status [system]
-  (let [coms (system-nodes system)]
+(defn status
+  "Get a grouped map of components by last run action."
+  [system]
+  (let [coms (nodes system)]
     (->> coms
          (map #(vector % (get-in system (conj % :cx/status))))
          (group-by second)
