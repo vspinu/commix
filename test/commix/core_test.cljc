@@ -482,4 +482,6 @@
   (def system (cx/init config))
   (def halted-system (cx/halt system))
   (.beep (java.awt.Toolkit/getDefaultToolkit))
+
+  (cx/load-namespaces config)
 )

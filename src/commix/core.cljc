@@ -77,12 +77,12 @@
 #?(:clj
    ;; Adapted from Integrant
    (do
-     
+
      (defn- keyword->namespaces [kw]
        (if-let [ns (namespace kw)]
          [(symbol ns)
           (symbol (str ns "." (name kw)))]))
-     
+
      (defn- try-require [sym]
        (try (do (require sym) sym)
             (catch java.io.FileNotFoundException _)))
@@ -110,12 +110,24 @@
 ;;; COMs
 
 (defn com
-  "Create a component from a key or a config map."
+  "Create a component from a key and a config map.
+  If `config' is a symbol it is automatically resolved.
+
+  (cx/com :ns/key {:param 1})
+
+  (cx/com :ns/key)        ; empty config
+  (cx/com :ns/key config) ; from symbol
+
+  (cx/com :ns/key config {:param 1}) ; merge {:param 1} into config
+
+  (cx/com {:param 1})              ; equivalent to
+  (cx/com :cx/identity {:param 1})"
   {:style/indent :defn}
-  ([config] (cond
-              (keyword? config) (com config {})              
-              (map? config)     (com :cx/identity config)
-              :else             (throw (ex-info "Invalid config argument. Must be a map or a keyword." {:config config}))))
+  ([config-or-key]
+   (cond
+     (keyword? config-or-key) (com config-or-key {})
+     (map? config-or-key)     (com :cx/identity config-or-key)
+     :else                    (throw (ex-info "Invalid config argument. Must be a map or a keyword." {:config config-or-key}))))
   ([key config]
    (cond
      (symbol? key)    (com (var-get (resolve key)) config)
@@ -127,10 +139,10 @@
   ([key config merge-config]
    (merge (com key config) merge-config)))
 
-(defn com-seq? [x]
+(defn- com-seq? [x]
   (and (seq? x) (contains? #{'cx/com 'commix.core/com} (first x))))
 
-(defn com-map? [x]
+(defn- com-map? [x]
   (and (map? x) (contains? x :cx/key)))
 
 (defn com? [x]
@@ -300,14 +312,12 @@
 (defn dependencies [graph-or-sys & [paths exclude-self?]]
   (transitive-dependencies graph-or-sys paths false exclude-self?))
 
-(defn reverse-dependencies [graph-or-sys & [paths exclude-self?]]
+(defn dependents [graph-or-sys & [paths exclude-self?]]
   (transitive-dependencies graph-or-sys paths true exclude-self?))
-
-(def dependents reverse-dependencies)
 
 
 
-;;; KEYED GENERICS  
+;;; KEYED GENERICS
 
 (defmulti init-key
   "Turn a config value associated with a key into a concrete implementation.
@@ -316,29 +326,19 @@
   {:arglists '([key value])}
   (fn [key value] key))
 
-(declare init)
 (defmethod init-key :cx/identity [_ v] v)
-
 
 (defmulti halt-key
   "Halt a running or suspended implementation associated with a key.
-  This is often used for stopping processes or cleaning up resources. 
+  Often used for stopping processes or cleaning up resources.
 
   As with other key methods the return of `halt-key' is inserted into the system
   map, this could be used for statistics reports and inspection of the stopped
-  components. If return value is nil the original component configuration will
-  be inserted into the system map.
-
-  This multimethod must be idempotent in the sense that if the component is
-  already stopped this method shouldn't throw. In case system map already
-  contains in this slot a configuration object, this methods is not
-  called. Thus, if this method returns nil, it's automatically idempotent.
-
-  Default method is a nop."
+  components. Default method is an identity."
   {:arglists '([key value])}
   (fn [key value] key))
 
-(defmethod halt-key :default [_ v])
+(defmethod halt-key :default [_ v] v)
 
 (defmulti resume-key
   "Turn a config value associated with a key into a concrete implementation,
@@ -352,7 +352,7 @@
 
 (defmulti suspend-key
   "Suspend a running implementation associated with a key, so that it may be
-  eventually passed to resume-key. By default this multimethod calls halt-key!,
+  eventually passed to resume-key. By default this multimethod calls halt-key,
   but it may be customized to do things like keep a server running, but buffer
   incoming requests until the server is resumed."
   {:arglists '([key value])}
@@ -534,7 +534,7 @@ is thrown if this condition is not satisfied."}
   "Halt a system map by applying `halt-key' in reverse dependency order."
   ([system] (halt system nil))
   ([system paths]
-   (let [deps (reverse-dependencies system paths)]
+   (let [deps (dependents system paths)]
      (run-action system deps halt-com))))
 
 (defn resume
@@ -560,6 +560,5 @@ is thrown if this condition is not satisfied."}
   All components that depend on this component will be also suspended."
   ([system] (suspend system nil))
   ([system paths]
-   (let [deps (reverse-dependencies system paths)]
+   (let [deps (dependents system paths)]
      (run-action system deps suspend-com))))
-
