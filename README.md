@@ -6,51 +6,46 @@
 >
 >     to mix together, blend components
 
-
 Commix is a Clojure (and ClojureScript) micro-framework for building
 applications with data-driven architecture. It provide simple and idiomatic
-composition of components and allows pipelines of predefined and custom
-life-cycle actions.
+composition of components and allows pipelines of custom life-cycle
+actions. 
 
-Commix is an alternative of [Ingegrant][], [Component][] and [Mount][], and was
-inspired by [Integrant][]. If you are familiar with [Integrant][] please also
-have a look at [Differences with Integrant][]
+Commix is an alternative to other life-cycle management
+systems - [Component][], [Mount][] and [Integrant][].
 
 [component]: https://github.com/stuartsierra/component
 [mount]: https://github.com/tolitius/mount
 [integrant]:https://github.com/weavejester/integrant
-[Differences with Integrant]:https://github.com/vspinu/commix
+[dif-integrant]:https://github.com/vspinu/commix/wiki/Differences-with-Integrant
 
 ## Rationale
 
 Commix was built as a response to a range of limitations in [Integrant][] which
-in turn was designed to overcome limitations of Component.
+in turn was designed to overcome limitations in
+Component. See [Differences with Integrant][dif-integrant] for a walk through.
 
-In Commix, systems are created from a configuration data structure, typically
+In Commix, systems are created from configuration data structures, typically
 loaded from an [edn][] resource. The architecture of the application is declared
-as data, rather than code.
+as data, rather than code. In Commix (unlike Component) any Clojure data
+structure can be a component and anything can depend on anything else.
 
-In Commix (unlike Component) any Clojure data structure can be a component
-and anything can depend on anything else. The dependencies are resolved from the
-configuration before it's initialized into a system.
+In Commix (unlike Integrant) system and component declarations are simple
+Clojure maps which could be grouped in arbitrary hierarchies within other
+systems. There is no distinction between systems and components. Any valid
+system can be reused as a component within other system allowing for simple
+module-like semantics. In Commix all life-cycle actions return system maps which
+can be pipelined into other action.
 
-In Commix (unlike Integrant) system/component declarations are simple Clojure
-maps which could be grouped in arbitrary hierarchies within other systems. There
-is no distinction between systems and components. Any valid system can be reused
-as a components within other systems allowing for rich and re-usable
-configurations. Unlike in Integrant life-cycle actions return an instance of a
-system which in turn can be use in another life-cycle phase.
-Se [Differences with Integrant][] for a walk through.
+In Commix life-cycle methods can be invoked only on parts of the system. Methods
+need not be idempotent and order of the methods is guided by a transition
+matrix. For example, actions like `init` and `halt` will never run twice in a
+row on the same node and will fail after actions which they were not supposed to
+follow. Custom life-cycle actions are trivial to write.
 
 Commix never loses references. Errors during life-cycle phases are caught and
 passed to the exception handler. A valid system is always returned to the caller
 for further manipulation or `halt`.
-
-In Commix all life-cycle methods can be invoked on parts of the system. Methods
-need not be idempotent as the order of the methods is controlled by a clear
-semantics of which phases are allowed to follow which. Thus, `init`, `halt`
-etc. methods will never run twice in a row on the same node and will fail after
-actions which they were not supposed to follow.
 
 [edn]: https://github.com/edn-format/edn
 
@@ -65,44 +60,44 @@ To install, add the following to your project `:dependencies`:
 
 ### Configuring and Running Systems at a Glance
 
-Commix components and systems are maps where each key is a parameter, another
-component or a reference to a component. On initialization nested components and
-references are substituted and the flat map is passed to the initialization
-method (`init-key`).
+Commix components and systems are maps where each key is a parameter, component
+or a reference to a component.
 
 ```clojure
-{:parameter 1
+{:parameter 1 ; <- plain parameter
 
  :com-A (cx/com :ns1/prototype-A
-          {:param1 10                     ; <- simple parameter
+          {:param1 10                     ; <- plain parameter
            :param2 (cx/ref :parameter)})  ; <- :parameter is a dependence
 
  :com-B (cx/com :ns1/prototype-B
-          {:foo ""                        ; <- simple parameter
-           :bar (cx/ref :parameter)       ; <- :parameter is a dependence
-           :baz (cx/ref :com-A)           ; <- :com-A is a dependence
-           :qax (cx/com :ns2/prototype2   ; <- qax is a dependency of :com-B!
+          {:foo ""                        ; <- plain parameter
+           :bar (cx/ref :parameter)       ; <- root's [:parameter] is a dependence
+           :baz (cx/ref :com-A)           ; <- root's [:com-A] is a dependence
+           :qux (cx/com :ns2/prototype2   ; <- [:com-B :qux] :is a dependency of [:com-B]!
                   {:a 1, :b 2, ,,,})
  }
 ```
 
 Configuration maps specify system topology and dependency relationships across
-parameters and components. Life-cycle behaviors are encapsulated in prototype
-keys (`:ns/prototype-A`, `:ns/prototype-B`, `:ns2/prototype2`).
+parameters and components. Plain parameters can be any Clojure data
+structures. Components are declared with [`cx/com`](#specifying-components).
+References are keys or vectors of keys marked with [`cx/ref`](#specifying-references).
+
+Life-cycle behaviors are provided by prototype keys (`:ns/prototype-A`,
+`:ns/prototype-B`, `:ns2/prototype2`) through multimethods which dispatch on
+keys - `init-key`, `halt-key` etc.
 
 
 ```clojure
-;; in ns1
-(defmethod cx/init-key ::prototype-A [k {:keys [param1 param2 param3]}]
+(defmethod cx/init-key :ns1/prototype-A [k {:keys [param1 param2 param3]}]
   (do-something-with param1 param2 param3))
 ```
 
-The value returned by cx/init-key is substituted into the system map in place of
-all dependents and references to the component. There are other life-cycle
-methods - `halt-key`, `suspend-key`, `resume-key` which follow similar
-multimethod protocol.
+The value returned by cx/init-key is substituted into the system map ready to be
+passed to the next life-cycle method.
 
-__Silly Working Example:__
+_Simple Example:_
 
 ```clojure
 
@@ -120,31 +115,18 @@ __Silly Working Example:__
 (defmethod cx/halt-key :timer/periodically [k v]
   (future-cancel v))
 
-;; 2) Optionaly Define Default Configs:
-
-(def reporter-config
-  {
-   :timeout 1000
-   :action  (fn [k e] (println "Elapsed:" e))
-   ,,,
-   })
-
-;; 3) System Config:
+;; 2) System Config:
 
 (def config
   {
-   :printer (fn [k e] (println (format "Com %s elapsed %ss" k e)))
+   :printer (fn [k e] (println (format "%s elapsed %ss" k e)))
 
-   :reporter (cx/com
-               :timer/periodically         ; <- inherit behavior from this key
-               reporter-config             ; <- resolve default config from this symbol
-               {
-                :timeout 5000              ; <- override config with this map
-                :action (cx/ref :printer)  ; <- reference parameter or component
-                })
+   :reporter (cx/com :timer/periodically
+               {:timeout 5000
+                :action (cx/ref :printer)})
    })
 
-;; 4) Run and halt
+;; 3) Init and Halt
 
 (def system (cx/init config))
 ;; =>
@@ -152,7 +134,8 @@ __Silly Working Example:__
 ;; Com :timer/periodically elapsed 10s
 ;; Com :timer/periodically elapsed 15s
 ;; ...
-(def halted-system (cx/halt system))
+
+(cx/halt system)
 
 ```
 
@@ -161,39 +144,40 @@ __Silly Working Example:__
 
 There are 2 ways to declare components:
 
-```clojure
-{
+1. _Using `cx/com` marker_
 
- ;;; 1) Using cx/com marker
- ;; prototype :ns/key with {} parameter map
- :A (cx/com :ns/key)
+  ```clojure
+  {
+   ;; prototype :ns/key with {} parameter map
+   :A (cx/com :ns/key)
 
- ;; with config
- :B1 (cx/com :ns/key {:param 1}) ; or
- :B2 (cx/com :ns/key config)
+   ;; with config
+   :B1 (cx/com :ns/key {:param 1}) ; or
+   :B2 (cx/com :ns/key config)
 
- ;; {:param 1} is merged into config
- :C (cx/com :ns/key config {:param 1})
+   ;; {:param 1} is merged into config
+   :C (cx/com :ns/key config {:param 1})
 
- ;; :cx/identity prototype which returns itself on initialization
- :D1 (cx/com {:param 1}) ; equivalent to
- :D2 (cx/com :cx/identity {:param 1})
+   ;; :cx/identity prototype which returns itself on initialization
+   :D1 (cx/com {:param 1}) ; equivalent to
+   :D2 (cx/com :cx/identity {:param 1})
+   }
+  ```
 
- ;;; 2) Using integrant syntax.
- ;; A namespaced parameter followed by a map is considered a component.
- ::D1 {:param 1} ; equivalent to
- ::D1 (cx/com ::D1 {:param 1})
+2. _Using Integrant syntax_
 
- }
-```
+  ```clojure
+  {
+   ;; A namespaced parameter followed by a map is considered a component.
+   ::D1 {:param 1} ; equivalent to
+   ::D1 (cx/com ::D1 {:param 1})
+   }
+  ```  
 
-Note that the above configuration is a valid [edn][] statement. You can read it
-from file or quote and Commix `init` action will do the right thing. Commix
-understands `cx/com` markers in quoted lists and expands those as if `cx/com`
-was actually called directly.
-
-Symbols as a second argument to `cx/com` (`config` above) are automatically
-resolved to their value. The following are equivalent
+Note that the above configurations are valid [edn][]. Commix expand `cx/com`
+markers in quoted lists as if `cx/com` was called directly. Symbols in the
+second argument to `cx/com` are resolved to their value. The following
+statements are equivalent:
 
 ```clojure
 (def com-config {:param 1})
@@ -205,20 +189,22 @@ resolved to their value. The following are equivalent
 (cx/init {:A '(cx/com :ns/name com-config)})
 (cx/init {:A (cx/com :ns/name 'com-config)})
 (cx/init (read-string "{:A (cx/com :ns/name {:param 1})}"))
+(cx/init (read-string "{:A (cx/com :ns/name com-config)}"))
+(cx/init (edn/read-string "{:A (cx/com :ns/name com-config)}"))
 ```
 
 ### Specifying References
 
-References are specified with `cx/ref`. Argument to `cx/ref` can be a key or
-vector of keys referring to parameters within the configuration map.
+References are marked with `cx/ref`. Argument to `cx/ref` is a key or vector of
+keys referring to parameters or components within the configuration map.
 
 References abide by following rules:
 
-  1. Reference lookup is done from inside out (towards the root).
-  2. `cx/com` boundaries are invisible, as if `cx/coms` are maps (they actually
-     are after the expansion)
+  1. Lookup is done from `cx/ref` outwards.
+  2. `cx/com` boundaries are invisible, as if `cx/coms` are maps (which they
+     are after the expansion).
   3. Matched sub-path need not start at root of the config map.
-  4. References cannot enter non-parent components
+  4. References cannot enter non-parent components.
 
 
 ```clojure
@@ -229,34 +215,34 @@ References abide by following rules:
           :grsys2 (cx/com {:bar 2})}
    :sys  (cx/com {:foo 1 :bar 1})
    :sys1 (cx/com
-           {:par  4
-            :quax (cx/com {})
-            :s    (cx/com
-                    {
-                     :a (cx/ref :quax)         ; refers to [:sys1 :quax]
-                     :b (cx/ref [:sys1 :quax]) ; same
-                     :c (cx/ref :sys)          ; ref to component
-                     :d (cx/ref [:gr :grsys1]) ; ref component
-                     :e (cx/ref [:par])        ; refers to [:sys1 :par] parameter
-                     :f (cx/ref [:pars :par])  ; [:pars :par] parameter
-                     })
-            :t    (cx/com
-                    {
-                     :a (cx/ref [:s :a])     ; invalid, cannot refer to non-parent!
-                     :b (cx/ref [:sys :foo]) ; invalid, cannot refer to non-parent!
-                     :d (cx/ref [:gr :quax]) ; invalid, cannot refer to non-parent!
-                     })
+           {:pars2 {:a 1 :b 2}
+            :quax  (cx/com {})
+            :s     (cx/com
+                     {
+                      :a (cx/ref :quax)         ; refers to [:sys1 :quax]
+                      :b (cx/ref [:sys1 :quax]) ; same
+                      :c (cx/ref :sys)          ; ref to component from root
+                      :d (cx/ref [:gr :grsys1]) ; ref to component from root
+                      :e (cx/ref [:pars2])      ; refers to [:sys1 :pars2] parameter
+                      :f (cx/ref [:pars :par])  ; [:pars :par] parameter
+                      :g (cx/ref [:pars2 :a])   ; [:sys1 :pars2 :a] parameter
+                      })
+            :t     (cx/com
+                     {
+                      :a (cx/ref [:s :a])     ; invalid, cannot refer in non-parent!
+                      :b (cx/ref [:sys :foo]) ; invalid, cannot refer in non-parent!
+                      :d (cx/ref [:gr :quax]) ; invalid, cannot refer in non-parent!
+                      })
             })
    })
 ```
 
-The above rules could be summarized intuitively as follows. Open parenthesis in
-`(cx/com ,,,)` is like a door - a ref can get out of its own door but cannot
-open and enter strangers' doors.
+Intuitively, open parenthesis in `(cx/com ,,,` is like a door - a ref can get
+out and in of its own doors, but cannot enter neighbors' doors.
 
-This reference semantics allows for composition of configurations and nesting of
-subsystems. References in nested configs will be expanded exactly the same way
-as they are in stand-alone configs. The following would be a valid config:
+The above `cx/ref` semantics allows for nesting of subsystems. References in
+nested configs will be resolved in exactly the same way as they are in
+stand-alone configs. The following would be a valid config:
 
 ```clojure
 (def nested-config
@@ -265,12 +251,37 @@ as they are in stand-alone configs. The following would be a valid config:
                   {:x (cx/ref :sub-system1)})})
 ```
 
+### Life-cycle Methods: `init-key`, `halt-key` etc.
 
-### Life-cycle Actions: init, halt etc.
+Components are instantiated from prototype keys which encapsulate life-cycle
+behavior. All methods receive two arguments, a dispatch key and the value. Value
+is different for different methods, but it's always the value which was returned
+by previous action. For instance `inti-key` will receive a config map of the
+component with all dependencies substituted with instantiated components. `halt`
+and `suspend` receive an instanciated component. `Resume-key` receives value
+returned by `syspend-key`.
+
+Default methods are defined for all life-cycle multi-methods except for
+`init-key`. Default method for `halt-key` is identity; for `suspend-key` and
+`resume-key` defaults are `halt-key` and `init-key` respectively. You need to
+define `init-key` methods for all of your prototype keys.
+
+```clojure
+(defmethod cx/init-key :default [k v]
+  (do
+    (something with k v)
+    ,,,
+    (return initialized component)))
+
+(defmethod cx/halt-key :default [k v]
+  (halt-and-return whatever you think is useful k v))
+```
+### Life-cycle Actions: `init`, `halt` etc.
 
 All built-in life-cycle actions (`init`, `halt`, `suspend` and `resume`) take in
-a system map and return a system map. Configuration is a valid stage in system's
-life-cycle - it's an un-initialized system map.
+a system map and return a system map. Config is part of the life-cycle -
+`config == uninitialized system` and 'init' action is no more special than
+other actions.
 
 Actions are composable:
 
@@ -307,8 +318,9 @@ twice. It also fails if an action is run after a wrong action:
 ;; => "Wrong dependency status" Exception
 ```
 
-This restriction ensures that invalid system states can never occur. Variable
-`cx/can-run-on-status` holds the allowed sequence of actions, currently:
+This restriction ensures that the system cannot end up in invalid
+states. Variable `cx/can-run-on-status` holds the allowed sequence of actions,
+currently:
 
 ```clojure
 {:init    #{nil :halt}
@@ -317,13 +329,14 @@ This restriction ensures that invalid system states can never occur. Variable
  :suspend #{:init :resume}}
 ```
 
-`Halt` can run after `init`, `resume` and `suspend`. Thus, if you write methods
-for `resume` and `suspend` make sure that your `halt` method can handle that.
+`Halt` can run after `init`, `resume` and `suspend`.  If you write methods for
+`resume` and `suspend` make sure that your `halt` method can handle that.
 
 Note that all actions might end operating on more nodes than those listed in the
-call. For instance `init` and `resume` ensure furst that all dependencies are
-running. `Halt` and `suspend` first halt or suspend all dependents. The
-following is not likely to result in the original state:
+call. For instance `init` and `resume` ensure first that all dependencies are
+also on. `Halt`(`suspend`) first halt(suspend) all dependents. 
+
+This is not likely to return to the original state of the system:
 
 ```clojure
 (-> system
@@ -339,14 +352,14 @@ but the following will
     (cx/init (cx/dependents system :a)))
 ```
 
-#### Monitoring Life Cycles
+#### Monitoring Life Cycles Actions
 
 ```clojure
 
-(defmethod cx/init-key :tt/tmp [k v] [:on])
-(defmethod cx/halt-key :tt/tmp [k v] [:stopped])
-(defmethod cx/resume-key :tt/tmp [k v] [:resumed])
-(defmethod cx/suspend-key :tt/tmp [k v] [:suspended])
+(defmethod cx/init-key :tt/tmp [_ _] [:on])
+(defmethod cx/halt-key :tt/tmp [_ _] [:stopped])
+(defmethod cx/resume-key :tt/tmp [_ _] [:resumed])
+(defmethod cx/suspend-key :tt/tmp [_ _] [:suspended])
 
 (alter-var-root #'cx/*trace-function* (constantly println))
 
@@ -371,10 +384,12 @@ but the following will
 ;; Skipping :resume on [:a] (current status: :init)
 ;; Running :resume on [:b] (current status: :suspend)
 
+;; grouped map of components by last action 
 (cx/status sys)
 ;; => {:resume #{[:b]}, :suspend #{[:c]}, :init #{[:a]}}
 
-(cx/objects sys)
+;; flat map of instantiated components
+(cx/icoms sys)
 ;; =>
 ;; {[:a] [:on],
 ;;  [:b] [:resumed],
@@ -384,11 +399,11 @@ but the following will
 
 #### Handling Errors
 
-By default Commix never throws. It always returns a valid system map which you
-can inspect or halt if needed. Exception handling is done with
-`cx/*exception-handler*` which by default pretty prints the exeption to stdout.
+By default Commix never throws. It always returns a valid system map for further
+inspection or halt. Exception handling is done with `cx/*exception-handler*`
+which by default pretty prints the exeption to stdout.
 
-If you want to throw like other life-cycle frameworks do, just reset the handler:
+If you want to throw like other life-cycle frameworks, change the handler:
 
 
 ```clojure
@@ -417,7 +432,19 @@ or
 
 ### Loading Namespaces
 
-TODO: Not implemented yet.
+It can be hard to remember to load all the namespaces that contain the relevant
+multimethods. Commix can help via the `load-namespaces` function.
+
+For example:
+
+```clojure
+(cx/load-namespaces {:foo.bar/baz {:message "hello"}})
+```
+
+will attempt to load the namespace `foo.bar` and also `foo.bar.bar`. A list of
+all successfully loaded namespaces will be returned from the function. Missing
+namespaces are ignored.
+
 
 ## How it works
 
