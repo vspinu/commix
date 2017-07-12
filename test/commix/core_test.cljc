@@ -517,23 +517,56 @@
 
   (cx/init conf)
 
-  (defmacro defaction [name action-class [system-arg com-path-arg] & body]
-    {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)
-           (contains? @can-run-on-status action-class)]}
-    ;; clojure's gensyms are valid within a syntax-quote; with nested
-    ;; syntax-quotes we need to inject our own gensyms.
-    `(defn- ~name [~system-arg ~com-path-arg]
-       (let [action-class# ~action-class
-             system-arg#   ~system-arg
-             com-path-arg# ~com-path-arg]
-         (if (can-run? system-arg# com-path-arg# action-class#)
-           (do
-             (check-deps-status system-arg# com-path-arg# action-class# false)
-             (check-deps-status system-arg# com-path-arg# action-class# true)
-             (let [system-arg# (try
-                                 ~@body
-                                 (catch #?(:clj Throwable :cljs :default) ex#
-                                     (throw (action-exception system-arg# com-path-arg# action-class# ex#))))]
-               (assoc-in system-arg# (conj com-path-arg# :cx/status) action-class#)))
-           system-arg#))))
+
+  ;; in duct.router ns
+  (def ataraxy
+    (cx/com :duct.router/ataraxy
+      :project-ns (cx/ref :duct.core/project-ns)
+      :routes nil
+      :handlers nil))
+
+  (defmethod cx/init-key [c _]
+    (do-what-duct.module/ataraxy-does-with c))
+
+
+  ;; on user side
+  {:duct.core/project-ns foo
+   :ataraxy              (cx/com duct.router/ataraxy)}
+
+
+
+  ;; ON MODULE SIDE
+  
+  (def cascading (cx/com ::cascading {:routes []}))
+
+  (def base-config (cx/com ::base-config
+                     {:bad-request      (plaintext-response "Bad Request"),
+                      :static-not-found (plaintext-response "Not Found"),
+                      ,,,}))
+
+  (def api-config (cx/com ::api-config
+                    {:bad-request      {:body ^:displace {:error :bad-request}}
+                     :static-not-found {:body ^:displace {:error :not-found}}
+                     ,,,}))
+
+  (def web (cx/com ::web
+             {:router (cx/com ::cascading
+                        {:routes (cx/ref :duct/routes)})
+              :site   (cx/com ::base-config)}))
+
+
+  
+  ;; ON THE USER SIDE
+
+  {:duct/routes [,,,]
+   :web         (cx/com duct.web/web
+                  {:site (cx/com :duct.web/api-config)}) ; <- overwrite site component
+   }
+
+  ;; or
+
+  {:web         (cx/com duct.web/web
+                  {:router {:routes [,,,]} }) ; <- overwrite only routes within cascading router
+   }
+  
 )

@@ -314,7 +314,7 @@
 
 ;;; KEYED GENERICS
 
-(defn- dispatch-fn [config _]
+(defn- com-dispatch-fn [config _]
   (or (:cx/key config)
       (throw (ex-info "Missing :cx/key in com config." {:config config}))))
 
@@ -323,7 +323,7 @@
   In order to avoid bugs due to typos there is no default method for
   `init-key'."
   {:arglists '([config value])}
-  dispatch-fn)
+  com-dispatch-fn)
 
 (defmethod init-key :cx/identity [_ v] v)
 
@@ -335,7 +335,7 @@
   map, this could be used for statistics reports and inspection of the stopped
   components. Default method is an identity."
   {:arglists '([config value])}
-  dispatch-fn)
+  com-dispatch-fn)
 
 (defmethod halt-key :default [_ v] v)
 
@@ -344,7 +344,7 @@
   but reuse resources (e.g. connections, running threads, etc). By default this
   multimethod calls init-key."
   {:arglists '([config value])}
-  dispatch-fn)
+  com-dispatch-fn)
 
 (defmethod resume-key :default [k v]
   (init-key k v))
@@ -355,7 +355,7 @@
   but it may be customized to do things like keep a server running, but buffer
   incoming requests until the server is resumed."
   {:arglists '([config value])}
-  dispatch-fn)
+  com-dispatch-fn)
 
 (defmethod suspend-key :default [k v]
   (halt-key k v))
@@ -520,47 +520,64 @@ is thrown if this condition is not satisfied."}
 
 ;;; LIFE CYCLE ACTIONS
 
-(defn init
+(defn- system-dispatch-fn [system & _]
+  (:cx/system system))
+
+(defmulti init
   "Turn config into a system map.
   Keys are traversed in dependency order and initiated via the init-key."
-  ([config]
-   (init config nil))
-  ([config paths]
+  {:arglists '([config] [config paths])}
+  system-dispatch-fn)
+
+(defmethod init :default
+  ([config & [paths]]
    (let [config (expand-config config)
          graph  (dependency-graph config)
          system (vary-meta config assoc ::graph graph)
          deps   (dependencies system paths)]
      (run-action system deps init-com))))
 
-(defn halt
+(defmulti halt
   "Halt a system map by applying `halt-key' in reverse dependency order."
-  ([system] (halt system nil))
-  ([system paths]
-   (let [deps (dependents system paths)]
-     (run-action system deps halt-com))))
+  {:arglists '([system] [system paths])}
+  system-dispatch-fn)
 
-(defn resume
+(defmethod halt :default
+  [system & [paths]]
+  (let [deps (dependents system paths)]
+    (run-action system deps halt-com)))
+
+(defmulti resume 
   "Resume components from preceding suspend.
   Dependencies that have been previously suspended will also be resumed,
   dependencies which were halted or never initialized will be initialized."
-  ([system] (resume system nil))
-  ([system paths]
+  {:arglists '([system] [system paths])}
+  system-dispatch-fn)
+
+(defmethod resume :default
+  ([system & [paths]]
    (let [deps (dependencies system paths)]
      (run-action system deps resume-com))))
 
-(defn resume-or-init
+(defmulti resume-or-init
   "Resume components from preceding suspend.
   Dependencies that have been previously suspended will also be resumed,
   dependencies which were halted or never initialized will be initialized."
-  ([system] (resume system nil))
-  ([system paths]
-   (let [deps (dependencies system paths)]
-     (run-action system deps resume-or-init))))
+  {:arglists '([system] [system paths])}
+  system-dispatch-fn)
 
-(defn suspend
+(defmethod resume-or-init :default
+  [system & [paths]]
+  (let [deps (dependencies system paths)]
+    (run-action system deps resume-or-init)))
+
+(defmulti suspend 
   "Resume components from preceding suspend.
   All components that depend on this component will be also suspended."
-  ([system] (suspend system nil))
-  ([system paths]
-   (let [deps (dependents system paths)]
-     (run-action system deps suspend-com))))
+  {:arglists '([system] [system paths])}
+  system-dispatch-fn)
+
+(defmethod suspend :default
+  [system & [paths]]
+  (let [deps (dependents system paths)]
+    (run-action system deps suspend-com)))

@@ -295,10 +295,10 @@ Default methods are defined for all life-cycle multi-methods except for
 ```
 ### Life-cycle Actions: `init`, `halt` etc.
 
-All built-in life-cycle actions (`init`, `halt`, `suspend` and `resume`) take in
-a system map and return a system map. Configuration stage is also part of the
-life-cycle - `config == uninitialized system` and 'init' action is no more
-special than any other actions.
+All life-cycle actions (`init`, `halt`, `suspend` and `resume`) take in a system
+map and optional paths and return a system map. Configuration stage is also part
+of the life-cycle - `config == uninitialized system` and 'init' action is no
+more special than any other actions.
 
 Actions are composable:
 
@@ -439,6 +439,27 @@ or
                               (throw ex))))
 ```
 
+#### Extending Actions
+
+All built-in actions are multi-methods which dispatch on `:cx/system` key within
+a system map. By defining custom methods library authors can customize life
+cycle methods.
+
+```clojure
+{:cx/system :some.package/xyz
+ ,,,
+ }
+```
+
+New custom actions are straightforward to write. See the documentation of
+`defaction` and `run-action` and see the source code of the built-in action for
+a self-explanatory tutorial. See also [How it works][#how-it-works] below.
+
+All built-in life-cycle actions are graph-isomorphic in the sense that they
+preserve the topology and dependency graph of the system. An action can modify
+the topology, but it should be rarely needed. If it does, it should also update
+`:commix.core/graph` metadata of the system.
+
 
 ### Reading From EDN Resources
 
@@ -464,20 +485,11 @@ namespaces are ignored.
 
 ## How it works
 
-System map is the original (expanded) config map with each node additionally
+System map is the expanded config map with each component additionally
 containing a bunch of special keys - `:cx/key` (dispatch key), `:cx/status`
 (previous action class), `:cx/value` (return value of the last life-cycle method
-run on this node).
- 
-First argument to a life-cycle method is precisely this node but with all
-`cx/refs` dependencies resolved and with two extra special keys `:cx/path` (path
-to this node) and `:cx/system` the whole system map.
- 
-All default life-cycle actions are graph-isomorphic in the sense that they
-preserve the topology and dependency graph of the system. This need not be the
-case in general. Custom actions are straightforward to write. See the
-documentation of `defaction` and `run-action` and use default actions in the
-package source as a self-explanatory tutorial.
+run on this node). Each life-cycle action runs on these nodes in dependency
+order and substitutes `:cx/value`. That's it.
 
 ## License
 
