@@ -448,6 +448,23 @@
         (cx/expand-config (read-string "{:A (cx/com :ns/name {:param 1})}"))
         )))
 
+(deftest modules-test
+
+  (let [fancy-com (cx/com ::fancy
+                    {:param (cx/ref :ns1/required-param)})
+        config {:ns1/required-param "param"
+                :fancy (cx/com fancy-com)}
+        config-no-ref {:fancy (cx/com fancy-com)}]
+
+    (is (= (-> config
+               (cx/init)
+               (cx/values))
+           {[:fancy] [:on]}))
+
+    (is (thrown-with-msg?
+          clojure.lang.ExceptionInfo #"^Missing dependency."
+          (-> config-no-ref
+              (cx/init))))))
 
 (comment
 

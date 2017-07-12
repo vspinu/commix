@@ -470,7 +470,7 @@ containing a bunch of special keys - `:cx/key` (dispatch key), `:cx/status`
 run on this node).
  
 First argument to a life-cycle method is precisely this node but with all
-`cx/refs` dependencies expanded and with two extra special keys `:cx/path` (path
+`cx/refs` dependencies resolved and with two extra special keys `:cx/path` (path
 to this node) and `:cx/system` the whole system map.
  
 All default life-cycle actions are graph-isomorphic in the sense that they

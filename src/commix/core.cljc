@@ -87,7 +87,7 @@
   ([config-or-key]
    (cond
      (keyword? config-or-key) (com config-or-key {})
-     (map? config-or-key)     (com :cx/identity config-or-key)
+     (map? config-or-key)     (com (get config-or-key :cx/key :cx/identity) config-or-key)
      :else                    (throw (ex-info "Invalid config argument. Must be a map or a keyword." {:config config-or-key}))))
   ([key config]
    (cond
@@ -95,7 +95,7 @@
      (symbol? config) (com key (if-let [var (resolve config)]
                                  (var-get var)
                                  (throw (ex-info "Cannot resolve config." {:symbol config}))))
-     (map? key)       (com :cx/identity key config)
+     (map? key)       (com (get key :cx/key :cx/identity) key config)
      (keyword? key)   (into (sorted-map)
                             (assoc config :cx/key key))
      :else            (throw (ex-info "Invalid key object supplied." {:key key :config config}))))
@@ -270,10 +270,10 @@
                                (reduce (fn [g d]
                                          (dep/depend g k d))
                                        g deps)
-                               (throw (ex-info "Invalid reference."
-                                               {:call     `(~'deps-from-ref ~'config ~k ~r)
+                               (throw (ex-info "Missing dependency."
+                                               {; :call     `(~'deps-from-ref ~'config ~k ~r)
                                                 :ref-key  r
-                                                :conf-key k}))))
+                                                :component k}))))
                            ;; Need ::ROOT for tracking nodes with no deps
                            (dep/depend g k ::ROOT)
                            v)))
