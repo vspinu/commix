@@ -30,18 +30,18 @@ loaded from an [edn][] resource. The architecture of the application is declared
 as data, rather than code. In Commix (unlike Component) any Clojure data
 structure can be a component and anything can depend on anything else.
 
-In Commix (unlike Integrant) system and component declarations are simple
-Clojure maps which could be grouped in arbitrary hierarchies within other
-systems. There is no distinction between systems and components. Any valid
-system can be reused as a component within other system allowing for simple
-module-like semantics. In Commix all life-cycle actions return system maps which
+In Commix (unlike Integrant) system and component declarations are Clojure maps
+which could be grouped in arbitrary hierarchies within other systems. There is
+no distinction between systems and components. Any valid system can be reused as
+a component within other system allowing for simple module-like semantics. Also
+unlike with Integrant, in Commix all life-cycle actions return system maps which
 can be pipelined into other action.
 
 In Commix life-cycle methods can be invoked only on parts of the system. Methods
-need not be idempotent and order of the methods is guided by a transition
+need not be idempotent and order of the methods is restricted by a transition
 matrix. For example, actions like `init` and `halt` will never run twice in a
-row on the same node and will fail after actions which they were not supposed to
-follow. Custom life-cycle actions are trivial to write.
+row on the same component and will fail after actions which they were not
+designed to follow. Custom life-cycle actions are very easy to write.
 
 Commix never loses references. Errors during life-cycle phases are caught and
 passed to the exception handler. A valid system is always returned to the caller
@@ -84,18 +84,21 @@ parameters and components. Plain parameters can be any Clojure data
 structures. Components are declared with [`cx/com`](#specifying-components).
 References are keys or vectors of keys marked with [`cx/ref`](#specifying-references).
 
-Life-cycle behaviors are provided by prototype keys (`:ns/prototype-A`,
+Life-cycle behaviors are encapsulated in prototype keys (`:ns/prototype-A`,
 `:ns/prototype-B`, `:ns2/prototype2`) through multimethods which dispatch on
-keys - `init-key`, `halt-key` etc.
+keys - `init-key`, `halt-key` etc. See [Life-cycle Methods][#life-cycle-methods-init-key-halt-key-etc].
 
 
 ```clojure
-(defmethod cx/init-key :ns1/prototype-A [k {:keys [param1 param2 param3]}]
+(defmethod cx/init-key :ns1/prototype-A [{:keys [param1 param2 param3] :as config} _]
   (do-something-with param1 param2 param3))
+
+(defmethod cx/halt-key :ns1/prototype-A [_ v]
+  (stop-resources v))
 ```
 
-The value returned by cx/init-key is substituted into the system map ready to be
-passed to the next life-cycle method.
+The value returned by life-cycle methods is substituted into the system map,
+ready to be passed to the next life-cycle method.
 
 _Simple Example:_
 
@@ -105,21 +108,21 @@ _Simple Example:_
 
 (require '[commix.core :as cx])
 
-(defmethod cx/init-key :timer/periodically [k {:keys [timeout action]}]
+(defmethod cx/init-key :timer/periodically [{:keys [timeout action]} _]
   (let [now   #(quot (System/currentTimeMillis) 1000)
         start (now)]
     (future (while true
               (Thread/sleep timeout)
-              (action k (- (now) start))))))
+              (action (- (now) start))))))
 
-(defmethod cx/halt-key :timer/periodically [k v]
+(defmethod cx/halt-key :timer/periodically [_ v]
   (future-cancel v))
 
 ;; 2) System Config:
 
 (def config
   {
-   :printer (fn [k e] (println (format "%s elapsed %ss" k e)))
+   :printer (fn [elapsed] (println (format "Elapsed %ss" elapsed)))
 
    :reporter (cx/com :timer/periodically
                {:timeout 5000
@@ -130,9 +133,8 @@ _Simple Example:_
 
 (def system (cx/init config))
 ;; =>
-;; Com :timer/periodically elapsed 5s
-;; Com :timer/periodically elapsed 10s
-;; Com :timer/periodically elapsed 15s
+;; Elapsed 5s
+;; Elapsed 10s
 ;; ...
 
 (cx/halt system)
@@ -254,34 +256,49 @@ stand-alone configs. The following would be a valid config:
 ### Life-cycle Methods: `init-key`, `halt-key` etc.
 
 Components are instantiated from prototype keys which encapsulate life-cycle
-behavior. All methods receive two arguments, a dispatch key and the value. Value
-is different for different methods, but it's always the value which was returned
-by previous action. For instance `inti-key` will receive a config map of the
-component with all dependencies substituted with instantiated components. `halt`
-and `suspend` receive an instanciated component. `Resume-key` receives value
-returned by `syspend-key`.
+behaviors. All methods receive two arguments, a config map and the value. 
+
+First argument, the config map, is the original configuration of the components
+with all `cx/refs` expanded to instantiated dependencies. It also contains a
+range of special keys:
+
+ - `:cx/key` - key on which life-cyle multi-methods are dispatched
+ - `:cx/status` - action class of the last action ran on this node (`:init`, `:halt` etc.)
+ - `:cx/path` - path to the component within the system
+ - `:cx/system` - whole system (discouraged!)
+
+While life-cycle methods can access the whole system through `:cx/system` keys,
+its use is discouraged. The core idea of a "component" is that it can exist in
+isolation and it's likely that you can achieve what you want with explicit use
+of dependencies.
+
+Second argument, value, is different for different methods, but it's always the
+value which was returned by a method in previous action. For instance `inti-key`
+will likely nil if there was no other method run before it. `halt` and `suspend`
+receive an instanciated component. `Resume-key` receives value returned by
+`syspend-key`.
 
 Default methods are defined for all life-cycle multi-methods except for
 `init-key`. Default method for `halt-key` is identity; for `suspend-key` and
-`resume-key` defaults are `halt-key` and `init-key` respectively. You need to
-define `init-key` methods for all of your prototype keys.
+`resume-key` default methods are `halt-key` and `init-key` respectively. 
+
 
 ```clojure
-(defmethod cx/init-key :default [k v]
+(defmethod cx/init-key :default [config value]
   (do
-    (something with k v)
+    (something with config value)
     ,,,
     (return initialized component)))
 
-(defmethod cx/halt-key :default [k v]
-  (halt-and-return whatever you think is useful k v))
+(defmethod cx/halt-key :default [config value]
+  (halt value and return whatever you think is useful))
 ```
 ### Life-cycle Actions: `init`, `halt` etc.
 
 All built-in life-cycle actions (`init`, `halt`, `suspend` and `resume`) take in
-a system map and return a system map. Config is part of the life-cycle -
-`config == uninitialized system` and 'init' action is no more special than
-other actions.
+a system map and return a system map. Configuration stage is also part of the
+life-cycle - `config == uninitialized system` and 'init' action is no more
+special than any other actions.
 
 Actions are composable:
 
@@ -445,17 +462,22 @@ will attempt to load the namespace `foo.bar` and also `foo.bar.bar`. A list of
 all successfully loaded namespaces will be returned from the function. Missing
 namespaces are ignored.
 
-
 ## How it works
 
-After initialization the system map the original config map with special keys
-(`:cx/obj`,`:cx/status`) inserted into each component. Each action runs through
-the system's nodes in specified dependency order and updates `:cx/obj` within
-each component.
-
-All default actions are isomorphic - they preserve the topology and dependency
-graph of the system. This need not be the case in general. Custom actions are
-straightforward to write. Use package source as a self-explanatory tutorial.
+System map is the original (expanded) config map with each node additionally
+containing a bunch of special keys - `:cx/key` (dispatch key), `:cx/status`
+(previous action class), `:cx/value` (return value of the last life-cycle method
+run on this node).
+ 
+First argument to a life-cycle method is precisely this node but with all
+`cx/refs` dependencies expanded and with two extra special keys `:cx/path` (path
+to this node) and `:cx/system` the whole system map.
+ 
+All default life-cycle actions are graph-isomorphic in the sense that they
+preserve the topology and dependency graph of the system. This need not be the
+case in general. Custom actions are straightforward to write. See the
+documentation of `defaction` and `run-action` and use default actions in the
+package source as a self-explanatory tutorial.
 
 ## License
 

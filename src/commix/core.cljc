@@ -44,23 +44,17 @@
                     (flatten fmap (conj (vec k) k1) v1))
                   fmap
                   v)))))
-
-(defn- update-obj-in [system com-path f]
-  (let [com     (get-in system com-path)
-        new-obj (f (:cx/key com) (:cx/obj com))]
-    (assoc-in system (conj com-path :cx/obj) new-obj)))
-
 (defn nodes
   "Get all component names from the system graph."
   [system]
   (set/difference (dep/nodes (-> system meta ::graph))
                   #{::ROOT}))
 
-(defn icoms
+(defn values
   "Get a flat map of instantiated components from the system map."
   [system]
   (into (sorted-map)
-        (map #(vector % (get-in system (conj % :cx/obj)))
+        (map #(vector % (get-in system (conj % :cx/value)))
              (nodes system))))
 
 (defn status
@@ -72,39 +66,6 @@
          (group-by second)
          (map (fn [[k v]] [k (into (sorted-set) (map first v))]))
          (into {}))))
-
-
-#?(:clj
-   ;; Adapted from Integrant
-   (do
-
-     (defn- keyword->namespaces [kw]
-       (if-let [ns (namespace kw)]
-         [(symbol ns)
-          (symbol (str ns "." (name kw)))]))
-
-     (defn- try-require [sym]
-       (try (do (require sym) sym)
-            (catch java.io.FileNotFoundException _)))
-
-     (defn load-namespaces
-       "Attempt to load the namespaces referenced by the keys in a configuration.
-     If a key is namespaced, both the namespace and the namespace concatenated
-     with the name will be tried. For example, if a key is :foo.bar/baz, then the
-     function will attempt to load the namespaces foo.bar and foo.bar.baz. Upon
-     completion, a list of all loaded namespaces will be returned."
-       [config]
-       (let [config (expand-coms config)
-             keys   (volatile! [])]
-         (walk/postwalk (fn [v]
-                          (if (com-map? v)
-                            (do (vswap! keys conj (com-key v)) v)
-                            v))
-                        config)
-         (doall (->> @keys
-                     (mapcat keyword->namespaces)
-                     (distinct)
-                     (keep try-require)))))))
 
 
 ;;; COMs
@@ -131,13 +92,16 @@
   ([key config]
    (cond
      (symbol? key)    (com (var-get (resolve key)) config)
-     (symbol? config) (com key (var-get (resolve config)))
+     (symbol? config) (com key (if-let [var (resolve config)]
+                                 (var-get var)
+                                 (throw (ex-info "Cannot resolve config." {:symbol config}))))
      (map? key)       (com :cx/identity key config)
      (keyword? key)   (into (sorted-map)
                             (assoc config :cx/key key))
      :else            (throw (ex-info "Invalid key object supplied." {:key key :config config}))))
   ([key config merge-config]
    (merge (com key config) merge-config)))
+
 
 (defn- com-seq? [x]
   (and (seq? x) (contains? #{'cx/com 'commix.core/com} (first x))))
@@ -161,16 +125,16 @@
   (if (com-seq? x)
     (last x)
     (if (com-map? x)
-      (dissoc x :cx/key :cx/obj)
+      (dissoc x :cx/key :cx/value)
       (throw (IllegalArgumentException. (format "Invalid com: %s" x))))))
 
-(defn- expand-coms [config]
+(defn expand-config [config]
   (let [expand-kwds (not (-> config meta ::graph)) ; expand only on init
         expand-v    (fn [[k v]]
                       (if (and expand-kwds
                                (namespaced-keyword? k)
                                (map? v) (not (com-map? v))
-                               (not= k :cx/obj))
+                               (not= k :cx/value))
                         (com k v)
                         (if (com-seq? v)
                           (com (com-key v) (com-conf v))
@@ -196,8 +160,40 @@
                                 (into c (get-coms-in-path config (conj path k)))))
                             #{}
                             v)
-        (coll? v) (set (mapcat get-coms-in-path v))
+        ;; (coll? v) (set (mapcat #(get-coms-in-path config %) v))
         :else    #{}))))
+
+#?(:clj
+   ;; Adapted from Integrant
+   (do
+
+     (defn- keyword->namespaces [kw]
+       (if-let [ns (namespace kw)]
+         [(symbol ns)
+          (symbol (str ns "." (name kw)))]))
+
+     (defn- try-require [sym]
+       (try (do (require sym) sym)
+            (catch java.io.FileNotFoundException _)))
+
+     (defn load-namespaces
+       "Attempt to load the namespaces referenced by the keys in a configuration.
+     If a key is namespaced, both the namespace and the namespace concatenated
+     with the name will be tried. For example, if a key is :foo.bar/baz, then the
+     function will attempt to load the namespaces foo.bar and foo.bar.baz. Upon
+     completion, a list of all loaded namespaces will be returned."
+       [config]
+       (let [config (expand-config config)
+             keys   (volatile! [])]
+         (walk/postwalk (fn [v]
+                          (if (com-map? v)
+                            (do (vswap! keys conj (com-key v)) v)
+                            v))
+                        config)
+         (doall (->> @keys
+                     (mapcat keyword->namespaces)
+                     (distinct)
+                     (keep try-require)))))))
 
 
 ;;; REFS
@@ -264,7 +260,7 @@
 (defn- dependency-graph
   "Dependency graph from config."
   [config]
-  (let [config (expand-coms config)
+  (let [config (expand-config config)
         refs   (all-refs (flatten config))]
     (reduce-kv (fn [g k v]
                  (if-not (com? (get-in config k))
@@ -315,16 +311,19 @@
 (defn dependents [graph-or-sys & [paths exclude-self?]]
   (transitive-dependencies graph-or-sys paths true exclude-self?))
 
-
 
 ;;; KEYED GENERICS
+
+(defn- dispatch-fn [config _]
+  (or (:cx/key config)
+      (throw (ex-info "Missing :cx/key in com config." {:config config}))))
 
 (defmulti init-key
   "Turn a config value associated with a key into a concrete implementation.
   In order to avoid bugs due to typos there is no default method for
   `init-key'."
-  {:arglists '([key value])}
-  (fn [key value] key))
+  {:arglists '([config value])}
+  dispatch-fn)
 
 (defmethod init-key :cx/identity [_ v] v)
 
@@ -335,8 +334,8 @@
   As with other key methods the return of `halt-key' is inserted into the system
   map, this could be used for statistics reports and inspection of the stopped
   components. Default method is an identity."
-  {:arglists '([key value])}
-  (fn [key value] key))
+  {:arglists '([config value])}
+  dispatch-fn)
 
 (defmethod halt-key :default [_ v] v)
 
@@ -344,8 +343,8 @@
   "Turn a config value associated with a key into a concrete implementation,
   but reuse resources (e.g. connections, running threads, etc). By default this
   multimethod calls init-key."
-  {:arglists '([key value])}
-  (fn [key value] key))
+  {:arglists '([config value])}
+  dispatch-fn)
 
 (defmethod resume-key :default [k v]
   (init-key k v))
@@ -355,8 +354,8 @@
   eventually passed to resume-key. By default this multimethod calls halt-key,
   but it may be customized to do things like keep a server running, but buffer
   incoming requests until the server is resumed."
-  {:arglists '([key value])}
-  (fn [key value] key))
+  {:arglists '([config value])}
+  dispatch-fn)
 
 (defmethod suspend-key :default [k v]
   (halt-key k v))
@@ -452,63 +451,66 @@ is thrown if this condition is not satisfied."}
              (*exception-handler* system @exception))
             (recur (cons path completed) paths system)))))))
 
-(defn- fill-obj-with-config [system com-path]
-  (update-in system com-path #(assoc % :cx/obj (com-conf %))))
-
-(defn- get-obj [system path]
-  (walk/prewalk #(if (com? %) (:cx/obj %) %)
+;; fixme: document or think of a more intuitive name
+(defn- make-value [system path]
+  (walk/prewalk #(if (com? %) (:cx/value %) %)
                 (get-in system path)))
 
-(defn- fill-obj-with-deps [system com-path]
+(defn- fill-obj-with-config [system com-path]
+  (update-in system com-path #(assoc % :cx/value (com-conf %))))
+
+(defn- get-filled-config-with-deps [system com-path]
   (let [filler #(walk/postwalk
                   (fn [v]
                     (if (ref? v)
                       (let [dp (dep-path-of-a-ref system com-path (ref-key v))]
-                        (get-obj system dp))
+                        (make-value system dp))
                       v))
                   %)]
-    (let [obj-path (conj com-path :cx/obj)
+    (let [obj-path (conj com-path :cx/value)
           system   (if (get-in system obj-path)
                      system
                      (fill-obj-with-config system com-path))]
-      (update-in system (conj com-path :cx/obj) filler))))
+      (filler (get-in system com-path)))))
+
+(defn- update-value-in [system com-path f]
+  (let [node (get-filled-config-with-deps system com-path)
+        new-value (f (-> node
+                         (dissoc :cx/value)
+                         (assoc :cx/system system
+                                :cx/path com-path))
+                     (:cx/value node))]
+    (assoc-in system (conj com-path :cx/value) new-value)))
 
 (defmacro defaction [name action-class [system-arg com-path-arg] & body]
   {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)
          (contains? @can-run-on-status action-class)]}
-  ;; clojure's gensyms are valid within a syntax-quote; with nested
-  ;; syntax-quotes we need to inject our own gensyms.
-  (let [act-class- (gensym)
-        sys-arg-   (gensym)
-        path-arg-  (gensym)]
-    `(defn- ~name [~system-arg ~com-path-arg]
-       ~`(let [~act-class- ~action-class
-               ~sys-arg-   ~system-arg
-               ~path-arg-  ~com-path-arg]
-           (if (can-run? ~sys-arg- ~path-arg- ~act-class-)
-             (do
-               (check-deps-status ~sys-arg- ~path-arg- ~act-class- false)
-               (check-deps-status ~sys-arg- ~path-arg- ~act-class- true)
-               ;; Reminder: nested syntax-quote is for this system-arg here
-               (let [~system-arg (fill-obj-with-deps ~sys-arg- ~path-arg-)
-                     ~sys-arg- (try
-                                 ~@body
-                                 (catch #?(:clj Throwable :cljs :default) ex#
-                                     (throw (action-exception ~sys-arg- ~path-arg- ~act-class- ex#))))]
-                 (assoc-in ~sys-arg- (conj ~path-arg- :cx/status) ~act-class-)))
-             ~sys-arg-)))))
+  `(defn- ~name [~system-arg ~com-path-arg]
+     (let [action-class# ~action-class
+           system-arg#   ~system-arg
+           com-path-arg# ~com-path-arg]
+       (if (can-run? system-arg# com-path-arg# action-class#)
+         (do
+           (check-deps-status system-arg# com-path-arg# action-class# false)
+           (check-deps-status system-arg# com-path-arg# action-class# true)
+           (let [system-arg# (try
+                               ~@body
+                               (catch #?(:clj Throwable :cljs :default) ex#
+                                   (throw (action-exception system-arg# com-path-arg# action-class# ex#))))]
+             (assoc-in system-arg# (conj com-path-arg# :cx/status) action-class#)))
+         system-arg#))))
 
 (defaction init-com :init [system com-path]
-  (update-obj-in system com-path init-key))
+  (update-value-in system com-path init-key))
 
 (defaction halt-com :halt [system com-path]
-  (update-obj-in system com-path halt-key))
+  (update-value-in system com-path halt-key))
 
 (defaction suspend-com :suspend [system com-path]
-  (update-obj-in system com-path suspend-key))
+  (update-value-in system com-path suspend-key))
 
 (defaction resume-com :resume [system com-path]
-  (update-obj-in system com-path resume-key))
+  (update-value-in system com-path resume-key))
 
 (defn- resume-or-init [system com-path]
   (-> system
@@ -524,7 +526,7 @@ is thrown if this condition is not satisfied."}
   ([config]
    (init config nil))
   ([config paths]
-   (let [config (expand-coms config)
+   (let [config (expand-config config)
          graph  (dependency-graph config)
          system (vary-meta config assoc ::graph graph)
          deps   (dependencies system paths)]

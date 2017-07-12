@@ -8,16 +8,18 @@
 (defn simplify-keys [config]
   (walk/postwalk #(if (#'cx/namespaced-keyword? %) (keyword (name %)) %) config))
 
-(defmethod cx/init-key :default [k v]
-  [:on])
+(defmethod cx/init-key :default [c v]
+  (let [c c
+        v v]
+   [:on]))
 
-(defmethod cx/halt-key :default [k v]
+(defmethod cx/halt-key :default [c v]
   [:stopped])
 
-(defmethod cx/resume-key :default [k v]
+(defmethod cx/resume-key :default [c v]
   [:resumed])
 
-(defmethod cx/suspend-key :default [k v]
+(defmethod cx/suspend-key :default [c v]
   [:suspended])
 
 (defn throw-ex-handler [system ex]
@@ -43,19 +45,19 @@
                               ::d {}})
                   :y 5
                   :w (cx/com {:v {:t (cx/ref :y)}})}}]
-    (is (= (#'cx/get-deps-in-path conf [:x :z :b])
+    (is (= (#'cx/deps-from-ref conf [:x :y :w] [:x :z :b])
            #{[:x :z :b :c] [:x :z :b :d]}))
-    (is (= (#'cx/get-deps-in-path conf [:x :z])
+    (is (= (#'cx/deps-from-ref conf [:x :y :w] [:x :z])
            #{[:x :z]}))
-    (is (= (#'cx/get-deps-in-path conf [:x :z :a])
+    (is (= (#'cx/deps-from-ref conf [:x :y :w] [:x :z :a])
            #{[:x :z :a]}))
-    (is (= (#'cx/get-deps-in-path conf [:x :z ::d])
+    (is (= (#'cx/deps-from-ref conf [:x :y :w] [:x :z ::d])
            #{}))
-    (is (= (#'cx/get-deps-in-path conf [:x :w :v])
+    (is (= (#'cx/deps-from-ref conf [:x :z] [:x :w :v])
            #{}))))
 
 (deftest expand-coms-test
-  (is (= (#'cx/expand-coms
+  (is (= (cx/expand-config
            {:a (cx/com ::abc {})
             :b (cx/com {})
             :c {:cx/key ::abc}
@@ -167,15 +169,15 @@
                         {:tt (cx/ref :gr)})
                 :sys4 (cx/com ::sys4
                         {:quax (cx/com ::quax {})})}]
-
+    
     (is (= (-> config
                (cx/init)
                (cx/halt [[:sys2 :quax]])
-               (cx/icoms))
+               (cx/values))
            (-> quote-config
                (cx/init)
                (cx/halt [[:sys2 :quax]])
-               (cx/icoms))
+               (cx/values))
            {[:sys]        [:on],
             [:sys2]       [:stopped],
             [:sys3]       [:on],
@@ -189,11 +191,11 @@
     (is (= (-> config
                (cx/init)
                (cx/halt [[:sys2 :quax] :sys4])
-               (cx/icoms))
+               (cx/values))
            (-> config
                (cx/init)
                (cx/halt [[:sys2 :quax] :sys4])
-               (cx/icoms))
+               (cx/values))
            {[:sys]        [:on],
             [:sys2]       [:stopped],
             [:sys3]       [:on],
@@ -323,7 +325,6 @@
         sys    (cx/init config)]
 
     (def config config)
-    (def sys sys)
 
     (testing "Init and Suspend/Resume Interaction"
 
@@ -349,6 +350,13 @@
                  (cx/suspend)
                  (cx/status))))
 
+      (def tt (-> config
+                  (cx/init [[:e :f]])
+                  (cx/suspend :a)))
+
+      ;; (cx/status tt)
+      ;; (cx/init tt [[:b :c]])
+      
       (is (thrown-with-msg?
             clojure.lang.ExceptionInfo #"^Wrong.*"
             (-> config
@@ -381,7 +389,6 @@
   (let [config {:a (cx/com :tt/a)
                 :b (cx/com :tt/b)}]
 
-    (def config config)
     (is (= (-> config
                (cx/init)
                (cx/status))
@@ -407,11 +414,10 @@
                             :l (cx/ref :a)})}]
     (defmethod cx/init-key :tt/z [_ v]
       (vals v))
-    
-    (def config config)
+
     (is (= (-> config
                (cx/init)
-               (cx/icoms))
+               (cx/values))
            {[:d]    {:k [[:on] [:on]]
                      :l {:b [:on]
                          :c [:on]}},
@@ -420,25 +426,27 @@
 
 
 (deftest com-expands-in-quoted-configs-test
-  (let [com-config {:param 1}]
+  (def com-config {:param 1})
 
-    (is (=
-          (cx/init {:A (cx/com :ns/name {:param 1})})
-          (cx/init '{:A (cx/com :ns/name {:param 1})})
-          (cx/init '{:A (cx/com :ns/name com-config)})
-          (cx/init {:A '(cx/com :ns/name {:param 1})})
-          (cx/init {:A '(cx/com :ns/name com-config)})
-          (cx/init {:A (cx/com :ns/name 'com-config)})
-          (cx/init (read-string "{:A (cx/com :ns/name {:param 1})}"))))
+  (is (=
+        (cx/init `{:A (cx/com :ns/name com-config)})
+        (cx/init {:A `(cx/com :ns/name com-config)})
+        (cx/init {:A (cx/com :ns/name `com-config)})
+        (cx/init {:A (cx/com :ns/name {:param 1})})
+        (cx/init '{:A (cx/com :ns/name {:param 1})})
+        (cx/init {:A '(cx/com :ns/name {:param 1})})
+        (cx/init (read-string "{:A (cx/com :ns/name {:param 1})}"))
+        ))
 
-    (is (=
-          (#'cx/expand-coms {:A (cx/com :ns/name {:param 1})})
-          (#'cx/expand-coms '{:A (cx/com :ns/name {:param 1})})
-          (#'cx/expand-coms '{:A (cx/com :ns/name com-config)})
-          (#'cx/expand-coms {:A '(cx/com :ns/name {:param 1})})
-          (#'cx/expand-coms {:A '(cx/com :ns/name com-config)})
-          (#'cx/expand-coms {:A (cx/com :ns/name 'com-config)})
-          (#'cx/expand-coms (read-string "{:A (cx/com :ns/name {:param 1})}"))))))
+  (is (=
+        (cx/expand-config {:A (cx/com :ns/name {:param 1})})
+        (cx/expand-config `{:A (cx/com :ns/name {:param 1})})
+        (cx/expand-config `{:A (cx/com :ns/name com-config)})
+        (cx/expand-config {:A '(cx/com :ns/name {:param 1})})
+        (cx/expand-config {:A `(cx/com :ns/name com-config)})
+        (cx/expand-config {:A (cx/com :ns/name `com-config)})
+        (cx/expand-config (read-string "{:A (cx/com :ns/name {:param 1})}"))
+        )))
 
 
 (comment
@@ -484,4 +492,31 @@
   (.beep (java.awt.Toolkit/getDefaultToolkit))
 
   (cx/load-namespaces config)
+
+  (def conf {:a (cx/com :tt/a {})
+             :b (cx/com :tt/b
+                  {:c (cx/com :tt/d
+                        {:d (cx/ref :a)})})})
+
+  (cx/init conf)
+
+  (defmacro defaction [name action-class [system-arg com-path-arg] & body]
+    {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)
+           (contains? @can-run-on-status action-class)]}
+    ;; clojure's gensyms are valid within a syntax-quote; with nested
+    ;; syntax-quotes we need to inject our own gensyms.
+    `(defn- ~name [~system-arg ~com-path-arg]
+       (let [action-class# ~action-class
+             system-arg#   ~system-arg
+             com-path-arg# ~com-path-arg]
+         (if (can-run? system-arg# com-path-arg# action-class#)
+           (do
+             (check-deps-status system-arg# com-path-arg# action-class# false)
+             (check-deps-status system-arg# com-path-arg# action-class# true)
+             (let [system-arg# (try
+                                 ~@body
+                                 (catch #?(:clj Throwable :cljs :default) ex#
+                                     (throw (action-exception system-arg# com-path-arg# action-class# ex#))))]
+               (assoc-in system-arg# (conj com-path-arg# :cx/status) action-class#)))
+           system-arg#))))
 )
