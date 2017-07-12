@@ -7,9 +7,9 @@
 >     to mix together, blend components
 
 Commix is a Clojure (and ClojureScript) micro-framework for building
-applications with data-driven architecture. It provide simple and idiomatic
+applications with data-driven architecture. It provides simple and idiomatic
 composition of components and allows pipelines of custom life-cycle
-actions. 
+actions.
 
 Commix is an alternative to other life-cycle management
 systems - [Component][], [Mount][] and [Integrant][].
@@ -25,17 +25,27 @@ Commix was built as a response to a range of limitations in [Integrant][] which
 in turn was designed to overcome limitations in
 Component. See [Differences with Integrant][dif-integrant] for a walk through.
 
-In Commix, systems are created from configuration data structures, typically
-loaded from an [edn][] resource. The architecture of the application is declared
-as data, rather than code. In Commix (unlike Component) any Clojure data
-structure can be a component and anything can depend on anything else.
+In Commix, systems are declared as a data structures, typically loaded from
+an [edn][] resource. In Commix (unlike Component) any Clojure data structure can
+be a component and anything can depend on anything else.
 
-In Commix (unlike Integrant) system and component declarations are Clojure maps
-which could be grouped in arbitrary hierarchies within other systems. There is
-no distinction between systems and components. Any valid system can be reused as
-a component within other system allowing for simple module-like semantics. Also
+In Commix (unlike Integrant) systems and components are Clojure maps which could
+be grouped in arbitrary hierarchies within other systems. There is no
+distinction between systems and components. Any valid system can be reused as a
+component within other system allowing for simple module-like semantics. Also
 unlike with Integrant, in Commix all life-cycle actions return system maps which
 can be pipelined into other action.
+
+Like with other systems each component in Commix accesses its dependencies as
+parameters in a single level map. But declaration of the components' behavior,
+component's structure and system's topology is considerably different.
+
+In Component and Mount declaration of components is distributed and there is no
+centralized definition of the system. In Integrant, declaration of the
+life-cycle behavior of components is distributed, but declaration of the system
+is a monolithic data structure and must be defined in one place. In Commix both
+behavior and structure can be arbitrarily distributed. You have the freedom to
+define your system in one place or split it in as many sub-systems as you wish.
 
 In Commix life-cycle methods can be invoked only on parts of the system. Methods
 need not be idempotent and order of the methods is restricted by a transition
@@ -174,7 +184,7 @@ There are 2 ways to declare components:
    ::D1 {:param 1} ; equivalent to
    ::D1 (cx/com ::D1 {:param 1})
    }
-  ```  
+  ```
 
 Note that the above configurations are valid [edn][]. Commix expand `cx/com`
 markers in quoted lists as if `cx/com` was called directly. Symbols in the
@@ -256,7 +266,7 @@ stand-alone configs. The following would be a valid config:
 ### Life-cycle Methods: `init-key`, `halt-key` etc.
 
 Components are instantiated from prototype keys which encapsulate life-cycle
-behaviors. All methods receive two arguments, a config map and the value. 
+behaviors. All methods receive two arguments, a config map and the value.
 
 First argument, the config map, is the original configuration of the components
 with all `cx/refs` expanded to instantiated dependencies. It also contains a
@@ -280,7 +290,7 @@ receive an instanciated component. `Resume-key` receives value returned by
 
 Default methods are defined for all life-cycle multi-methods except for
 `init-key`. Default method for `halt-key` is identity; for `suspend-key` and
-`resume-key` default methods are `halt-key` and `init-key` respectively. 
+`resume-key` default methods are `halt-key` and `init-key` respectively.
 
 
 ```clojure
@@ -351,7 +361,7 @@ currently:
 
 Note that all actions might end operating on more nodes than those listed in the
 call. For instance `init` and `resume` ensure first that all dependencies are
-also on. `Halt`(`suspend`) first halt(suspend) all dependents. 
+also on. `Halt`(`suspend`) first halt(suspend) all dependents.
 
 This is not likely to return to the original state of the system:
 
@@ -401,7 +411,7 @@ but the following will
 ;; Skipping :resume on [:a] (current status: :init)
 ;; Running :resume on [:b] (current status: :suspend)
 
-;; grouped map of components by last action 
+;; grouped map of components by last action
 (cx/status sys)
 ;; => {:resume #{[:b]}, :suspend #{[:c]}, :init #{[:a]}}
 
@@ -428,7 +438,7 @@ If you want to throw like other life-cycle frameworks, change the handler:
                 (constantly (fn [_ ex] (throw ex))))
 ```
 
-or 
+or
 
 ```clojure
 (def shadow-system (atom nil))
