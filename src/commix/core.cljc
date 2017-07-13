@@ -6,18 +6,49 @@
             [clojure.string :as str]
             #?(:clj  [clojure.pprint]
                :cljs [cljs.pprint]))
-  ;; #?(:cljs (:require-macros [commix.macros :as m :refer [defaction]])
-  ;;    :clj (:require [commix.macros :as m :refer [defaction]]))
-  )
-
-(def ^:dynamic *trace-function* println)
+  #?(:cljs (:require-macros [commix.macros :refer [defaction]])
+     :clj (:require [commix.macros :refer [defaction]])))
 
 (defn default-exception-handler [system ex]
   #?(:clj  (clojure.pprint/pprint ex)
      :cljs (cljs.pprint/pprint ex))
   system)
 
-(def ^:dynamic *exception-handler* default-exception-handler)
+(def ^:dynamic *exception-handler*
+  (atom default-exception-handler))
+
+(def ^:dynamic *trace-function*
+  (atom nil))
+
+(def ^{:doc "When action :A is performed on a component, all the component's
+dependencies must have their status in (:A
+@required-dependent-status). Exception is thrown if this condition is not
+satisfied."}
+  required-dependency-status
+  (atom {:init #{:init :resume}
+         :resume #{:init :resume}
+         :halt #{:ALL}
+         :suspend #{:ALL}
+         }))
+
+(def ^{:doc "When action :A is performed on a component, all the component's
+dependents must have their status in (:A @required-dependent-status). Exception
+is thrown if this condition is not satisfied."}
+  required-dependent-status
+  (atom {:init #{:ALL}
+         :resume #{:ALL}
+         :halt #{:halt nil}
+         :suspend #{:suspend :halt nil}
+         }))
+
+(def ^{:doc "If action :A can run after :B then :B must be in (:A
+  @can-run-on-status). If this condition is not satisfied action is not
+  performed (silently)."}
+  can-run-on-status
+  (atom {:init    #{nil :halt}
+         :halt    #{:init :resume :suspend}
+         :resume  #{:suspend}
+         :suspend #{:init :resume}}))
 
 
 ;;; UTILS
@@ -378,41 +409,11 @@
 
 ;;; ACTIONS
 
-(def ^{:doc "When action :A is performed on a component, all the component's
-dependencies must have their status in (:A
-@required-dependent-status). Exception is thrown if this condition is not
-satisfied."}
-  required-dependency-status
-  (atom {:init #{:init :resume}
-         :resume #{:init :resume}
-         :halt #{:ALL}
-         :suspend #{:ALL}
-         }))
-
-(def ^{:doc "When action :A is performed on a component, all the component's
-dependents must have their status in (:A @required-dependent-status). Exception
-is thrown if this condition is not satisfied."}
-  required-dependent-status
-  (atom {:init #{:ALL}
-         :resume #{:ALL}
-         :halt #{:halt nil}
-         :suspend #{:suspend :halt nil}
-         }))
-
-(def ^{:doc "If action :A can run after :B then :B must be in (:A
-  @can-run-on-status). If this condition is not satisfied action is not
-  performed (silently)."}
-  can-run-on-status
-  (atom {:init    #{nil :halt}
-         :halt    #{:init :resume :suspend}
-         :resume  #{:suspend}
-         :suspend #{:init :resume}}))
-
 (defn can-run? [system com-path action]
   (let [status (:cx/status (get-in system com-path))
         run?   (contains? (get @can-run-on-status action) status)]
-    (when *trace-function*
-      (*trace-function* (format "%s %s on %s (current status: %s)"
+    (when @*trace-function*
+      (@*trace-function* (format "%s %s on %s (current status: %s)"
                                 (if run? "Running" "Skipping")
                                 action com-path status)))
     run?))
@@ -438,12 +439,13 @@ is thrown if this condition is not satisfied."}
                                       :dependency-status          status}))))))))))
 
 
-(defn- action-exception [system com-path action-class ex]
+(defn action-exception [system com-path action-class ex]
   (ex-info (format "Error in %s action on component %s" action-class com-path)
            {:reason ::action-exception
             :action action-class
             :com-path com-path
-            :com (get-in system com-path)}
+            :com (get-in system com-path)
+            :ex ex}
            ex))
 
 (defn run-action [system paths action]
@@ -453,17 +455,19 @@ is thrown if this condition is not satisfied."}
            system         system]
       (if-not path
         system
-        (let [system (try
-                       (action system path)
-                       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) ex
-                         (reset! exception ex)
-                         system)
-                       (catch #?(:clj Throwable :cljs :default) ex
-                         (reset! exception (action-exception system path :unknown ex))
-                         system))]
+        (let [system
+              (try
+                (action system path)
+                (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) ex
+                    (reset! exception ex)
+                  system)
+                (catch #?(:clj Throwable :cljs :default) ex
+                    (reset! exception (action-exception system path :unknown ex))
+                  system)
+                )]
           (if @exception
-            (when *exception-handler*
-             (*exception-handler* system @exception))
+            (when @*exception-handler*
+             (@*exception-handler* system @exception))
             (recur (cons path completed) paths system)))))))
 
 ;; fixme: document or think of a more intuitive name
@@ -497,23 +501,6 @@ is thrown if this condition is not satisfied."}
                      (:cx/value node))]
     (assoc-in system (conj com-path :cx/value) new-value)))
 
-(defmacro defaction [name action-class [system-arg com-path-arg] & body]
-  {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)]}
-  `(defn- ~name [~system-arg ~com-path-arg]
-     (let [action-class# ~action-class
-           system-arg#   ~system-arg
-           com-path-arg# ~com-path-arg]
-       (if (can-run? system-arg# com-path-arg# action-class#)
-         (do
-           (check-deps-status system-arg# com-path-arg# action-class# false)
-           (check-deps-status system-arg# com-path-arg# action-class# true)
-           (let [system-arg# (try
-                               ~@body
-                               (catch #?(:clj Throwable :cljs :default) ex#
-                                   (throw (action-exception system-arg# com-path-arg# action-class# ex#))))]
-             (assoc-in system-arg# (conj com-path-arg# :cx/status) action-class#)))
-         system-arg#))))
-
 (defaction init-com :init [system com-path]
   (update-value-in system com-path init-key))
 
@@ -526,7 +513,7 @@ is thrown if this condition is not satisfied."}
 (defaction resume-com :resume [system com-path]
   (update-value-in system com-path resume-key))
 
-(defn- resume-or-init [system com-path]
+(defn- resume-or-init-com [system com-path]
   (-> system
       (resume-com com-path)
       (init-com com-path)))
@@ -569,9 +556,9 @@ is thrown if this condition is not satisfied."}
   system-dispatch-fn)
 
 (defmethod resume :default
-  ([system & [paths]]
-   (let [deps (dependencies system paths)]
-     (run-action system deps resume-com))))
+  [system & [paths]]
+  (let [deps (dependencies system paths)]
+    (run-action system deps resume-com)))
 
 (defmulti resume-or-init
   "Resume components from preceding suspend.
@@ -583,13 +570,20 @@ is thrown if this condition is not satisfied."}
 (defmethod resume-or-init :default
   [system & [paths]]
   (let [deps (dependencies system paths)]
-    (run-action system deps resume-or-init)))
+    (run-action system deps resume-or-init-com)))
 
 (defmulti suspend 
   "Resume components from preceding suspend.
   All components that depend on this component will be also suspended."
   {:arglists '([system] [system paths])}
   system-dispatch-fn)
+
+(comment
+
+  #?(:cljs (init {:ddd (com {:par1 1})}))
+
+  )
+
 
 (defmethod suspend :default
   [system & [paths]]

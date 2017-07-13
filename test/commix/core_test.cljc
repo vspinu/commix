@@ -25,7 +25,8 @@
 (defn throw-ex-handler [system ex]
   (throw ex))
 
-(alter-var-root #'cx/*exception-handler* (constantly throw-ex-handler))
+(reset! cx/*exception-handler* throw-ex-handler)
+(reset! cx/*trace-function* nil)
 
 (deftest get-refs-test
   (is (= (#'cx/get-refs {:tt (cx/ref :qq)}) #{[:qq]}))
@@ -358,7 +359,7 @@
       ;; (cx/init tt [[:b :c]])
       
       (is (thrown-with-msg?
-            clojure.lang.ExceptionInfo #"^Wrong.*"
+            #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) #"^Wrong.*"
             (-> config
                 (cx/init [[:e :f]])
                 (cx/suspend :a)
@@ -428,25 +429,35 @@
 (deftest com-expands-in-quoted-configs-test
   (def com-config {:param 1})
 
-  (is (=
-        (cx/init `{:A (cx/com :ns/name com-config)})
-        (cx/init {:A `(cx/com :ns/name com-config)})
-        (cx/init {:A (cx/com :ns/name `com-config)})
-        (cx/init {:A (cx/com :ns/name {:param 1})})
-        (cx/init '{:A (cx/com :ns/name {:param 1})})
-        (cx/init {:A '(cx/com :ns/name {:param 1})})
-        (cx/init (read-string "{:A (cx/com :ns/name {:param 1})}"))
-        ))
-
-  (is (=
-        (cx/expand-config {:A (cx/com :ns/name {:param 1})})
-        (cx/expand-config `{:A (cx/com :ns/name {:param 1})})
-        (cx/expand-config `{:A (cx/com :ns/name com-config)})
-        (cx/expand-config {:A '(cx/com :ns/name {:param 1})})
-        (cx/expand-config {:A `(cx/com :ns/name com-config)})
-        (cx/expand-config {:A (cx/com :ns/name `com-config)})
-        (cx/expand-config (read-string "{:A (cx/com :ns/name {:param 1})}"))
-        )))
+  #?(:clj
+     (is (=
+           (cx/init `{:A (cx/com :ns/name com-config)})
+           (cx/init {:A `(cx/com :ns/name com-config)})
+           (cx/init {:A (cx/com :ns/name `com-config)})
+           (cx/init {:A (cx/com :ns/name {:param 1})})
+           (cx/init '{:A (cx/com :ns/name {:param 1})})
+           (cx/init {:A '(cx/com :ns/name {:param 1})})
+           (cx/init (read-string "{:A (cx/com :ns/name {:param 1})}"))))
+     :cljs
+     (is (=
+           (cx/init {:A (cx/com :ns/name {:param 1})})
+           (cx/init '{:A (cx/com :ns/name {:param 1})})
+           (cx/init {:A '(cx/com :ns/name {:param 1})}))))
+  #?(:clj
+     (is (=
+           (cx/expand-config {:A (cx/com :ns/name {:param 1})})
+           (cx/expand-config `{:A (cx/com :ns/name {:param 1})})
+           (cx/expand-config {:A '(cx/com :ns/name {:param 1})})
+           (cx/expand-config `{:A (cx/com :ns/name com-config)})
+           (cx/expand-config {:A `(cx/com :ns/name com-config)})
+           (cx/expand-config {:A (cx/com :ns/name `com-config)})
+           #?(:clj (cx/expand-config (read-string "{:A (cx/com :ns/name {:param 1})}")))
+           ))
+     :cljs
+     (is (=
+           (cx/expand-config {:A (cx/com :ns/name {:param 1})})
+           (cx/expand-config `{:A (cx/com :ns/name {:param 1})})
+           (cx/expand-config {:A '(cx/com :ns/name {:param 1})})))))
 
 (deftest modules-test
 
@@ -462,7 +473,7 @@
            {[:fancy] [:on]}))
 
     (is (thrown-with-msg?
-          clojure.lang.ExceptionInfo #"^Missing dependency."
+          #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) #"^Missing dependency."
           (-> config-no-ref
               (cx/init))))))
 

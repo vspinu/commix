@@ -14,13 +14,7 @@
   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
   :plugins [[lein-doo "0.1.7"]]
   :cljsbuild
-  {:builds [{:id "test-phantom"
-             :source-paths ["src" "test"]
-             :compiler {:output-to  "target/cljs/test-phantom/test-commix.js"
-                        :output-dir "target/cljs/test-phantom/out"
-                        :main commix.test-runner
-                        :optimizations :none}}
-            {:id "test-nashorn"
+  {:builds [{:id "test-nashorn"
              :source-paths ["src" "test"]
              :compiler {:output-to  "target/cljs/test-nashorn/test-commix.js"
                         :output-dir "target/cljs/test-nashorn/out"
@@ -33,9 +27,8 @@
                         :output-dir "target/cljs/test-node/out"
                         :main commix.test-runner
                         :optimizations :none}}]}
-  :aliases {"test-phantom" ["doo" "phantom" "test-phantom" "once"]
-            "test-nashorn" ["doo" "nashorn" "test-nashorn" "once"]
+  :aliases {"test-nashorn" ["doo" "nashorn" "test-nashorn" "once"]
             "test-node"    ["doo" "node" "test-node" "once"]
-            "test-cljs"    ["do" ["test-phantom"] ["test-nashorn"] ["test-node"]]
+            "test-cljs"    ["do" ["test-nashorn"] ["test-node"]]
             "test-all"     ["do" ["test"] ["test-cljs"]]
             "test"         ["test" ":only" "commix.core-test"]})
