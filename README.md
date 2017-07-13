@@ -45,15 +45,15 @@ centralized definition of the system. In Integrant, declaration of the
 life-cycle behavior of components is distributed, but declaration of the system
 is a monolithic data structure and must be defined in one place. In Commix both
 behavior and structure can be arbitrarily distributed. You have the freedom to
-define your system in one place or split it in as many sub-systems as you wish.
+define your system in one place or split it in multiple sub-systems.
 
-In Commix life-cycle methods can be invoked only on parts of the system. Methods
-need not be idempotent and order of the methods is restricted by a transition
+In Commix life-cycle methods can be invoked on parts of the system. Methods need
+not be idempotent and order of the methods is restricted by a transition
 matrix. For example, actions like `init` and `halt` will never run twice in a
 row on the same component and will fail after actions which they were not
 designed to follow. Custom life-cycle actions are very easy to write.
 
-Commix never loses references. Errors during life-cycle phases are caught and
+Commix doesn't lose references. Errors during life-cycle phases are caught and
 passed to the exception handler. A valid system is always returned to the caller
 for further manipulation or `halt`.
 
@@ -63,7 +63,8 @@ for further manipulation or `halt`.
 
 To install, add the following to your project `:dependencies`:
 
-    [commix "x.y.z"]
+    ;; not on clojars yet
+    [commix "0.1.0"]
 
 
 ## Usage
@@ -388,7 +389,7 @@ but the following will
 (defmethod cx/resume-key :tt/tmp [_ _] [:resumed])
 (defmethod cx/suspend-key :tt/tmp [_ _] [:suspended])
 
-(alter-var-root #'cx/*trace-function* (constantly println))
+(reset! #'cx/*trace-function* println)
 
 (def config
   {:a (cx/com :tt/tmp {})
@@ -430,12 +431,11 @@ By default Commix never throws. It always returns a valid system map for further
 inspection or halt. Exception handling is done with `cx/*exception-handler*`
 which by default pretty prints the exeption to stdout.
 
-If you want to throw like other life-cycle frameworks, change the handler:
+If you want to throw like in other life-cycle frameworks, change the handler:
 
 
 ```clojure
-(alter-var-root #'cx/*exception-handler*
-                (constantly (fn [_ ex] (throw ex))))
+(reset! #'cx/*exception-handler* (fn [_ ex] (throw ex)))
 ```
 
 or
@@ -443,10 +443,10 @@ or
 ```clojure
 (def shadow-system (atom nil))
 
-(alter-var-root #'cx/*exception-handler*
-                (constantly (fn [system ex]
-                              (reset! shadow-system system)
-                              (throw ex))))
+(reset! #'cx/*exception-handler*
+        (fn [system ex]
+          (reset! shadow-system system)
+          (throw ex)))
 ```
 
 #### Extending Actions
