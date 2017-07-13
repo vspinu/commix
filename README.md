@@ -1,6 +1,6 @@
 # Commix
 
-<!-- [![Build Status](https://travis-ci.org/vspinu/commix.svg?branch=master)](https://travis-ci.org/vspinu/commix) -->
+[![Build Status](https://travis-ci.org/vspinu/commix.svg?branch=master)](https://travis-ci.org/vspinu/commix)
 
 > com•mix (kəˈmɪks)
 >
