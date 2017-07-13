@@ -21,9 +21,8 @@
   (atom nil))
 
 (def ^{:doc "When action :A is performed on a component, all the component's
-dependencies must have their status in (:A
-@required-dependent-status). Exception is thrown if this condition is not
-satisfied."}
+dependencies must have their status in (:A @required-dependent-status).
+Exception is thrown if this condition is not satisfied."}
   required-dependency-status
   (atom {:init #{:init :resume}
          :resume #{:init :resume}
@@ -41,9 +40,9 @@ is thrown if this condition is not satisfied."}
          :suspend #{:suspend :halt nil}
          }))
 
-(def ^{:doc "If action :A can run after :B then :B must be in (:A
-  @can-run-on-status). If this condition is not satisfied action is not
-  performed (silently)."}
+(def ^{:doc
+       "If action :A can run after :B then :B must be in (:A @can-run-on-status).
+If this condition is not satisfied action is not performed (silently)."}
   can-run-on-status
   (atom {:init    #{nil :halt}
          :halt    #{:init :resume :suspend}
