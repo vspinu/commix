@@ -5,7 +5,13 @@
             :url "http://opensource.org/licenses/MIT"}
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [com.stuartsierra/dependency "0.2.0"]]
-  :profiles {:dev {:dependencies [[org.clojure/clojurescript "1.7.228"]]}}
+  :profiles {:dev
+             {:dependencies [[org.clojure/clojure "1.8.0"]
+                             [org.clojure/clojurescript "1.7.228"]
+                             ;; [org.clojure/clojurescript "1.9.183"]
+                             [com.cemerick/piggieback "0.2.2"]]}
+             }
+  :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
   :plugins [[lein-doo "0.1.7"]]
   :cljsbuild
   {:builds [{:id "test-phantom"

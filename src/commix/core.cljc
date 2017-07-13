@@ -1,16 +1,20 @@
 (ns commix.core
   (:refer-clojure :exclude [ref flatten])
   (:require [com.stuartsierra.dependency :as dep]
-            ;; #?(:clj  [clojure.edn :as edn])
             [clojure.set :as set]
             [clojure.walk :as walk]
-            ;; [clojure.string :as str]
-            ))
+            [clojure.string :as str]
+            #?(:clj  [clojure.pprint]
+               :cljs [cljs.pprint]))
+  ;; #?(:cljs (:require-macros [commix.macros :as m :refer [defaction]])
+  ;;    :clj (:require [commix.macros :as m :refer [defaction]]))
+  )
 
 (def ^:dynamic *trace-function* println)
 
 (defn default-exception-handler [system ex]
-  (clojure.pprint/pprint ex)
+  #?(:clj  (clojure.pprint/pprint ex)
+     :cljs (cljs.pprint/pprint ex))
   system)
 
 (def ^:dynamic *exception-handler* default-exception-handler)
@@ -67,6 +71,14 @@
          (map (fn [[k v]] [k (into (sorted-set) (map first v))]))
          (into {}))))
 
+#?(:cljs
+   (defn format [fmt & args]
+     (loop [s fmt
+            [a & args] args]
+       (if a
+         (recur (str/replace-first s #"%s" (str a)) args)
+         s))))
+
 
 ;;; COMs
 
@@ -91,10 +103,14 @@
      :else                    (throw (ex-info "Invalid config argument. Must be a map or a keyword." {:config config-or-key}))))
   ([key config]
    (cond
-     (symbol? key)    (com (var-get (resolve key)) config)
-     (symbol? config) (com key (if-let [var (resolve config)]
-                                 (var-get var)
-                                 (throw (ex-info "Cannot resolve config." {:symbol config}))))
+     (symbol? key)    (do
+                        #?(:clj (com (var-get (resolve key)) config))
+                        #?(:cljs (throw (js/Error. "Cannot resolve symbols in clojurescript."))))
+     (symbol? config) (do
+                        #?(:clj (com key (if-let [var (resolve config)]
+                                             (var-get var)
+                                             (throw (ex-info "Cannot resolve config." {:symbol config})))))
+                        #?(:cljs (throw (js/Error. "Cannot resolve symbols in clojurescript."))))
      (map? key)       (com (get key :cx/key :cx/identity) key config)
      (keyword? key)   (into (sorted-map)
                             (assoc config :cx/key key))
@@ -119,14 +135,14 @@
       (if (= (count x) 3)
         (second x)
         :cx/identity)
-      (throw (IllegalArgumentException. (format "Invalid com: %s" x))))))
+      (throw (ex-info "Invalid com." {:object x})))))
 
 (defn- com-conf [x]
   (if (com-seq? x)
     (last x)
     (if (com-map? x)
       (dissoc x :cx/key :cx/value)
-      (throw (IllegalArgumentException. (format "Invalid com: %s" x))))))
+      (throw (ex-info "Invalid com." {:object x})))))
 
 (defn expand-config [config]
   (let [expand-kwds (not (-> config meta ::graph)) ; expand only on init
@@ -213,7 +229,7 @@
   (if (ref? x)
     (let [k (second x)]
       (if (vector? k) k [k]))
-    (throw (IllegalArgumentException. (format "Invalid ref: %s" x)))))
+    (throw (ex-info "Invalid ref." {:object x}))))
 
 (defn- get-refs
   "Get set of refs in object v."
@@ -288,8 +304,7 @@
                   (let [paths  (normalize-paths paths)
                         extras (set/difference paths (dep/nodes graph))]
                     (when (seq extras)
-                      (throw (IllegalAccessException.
-                               (format "No component(s) in path(s): %s" extras))))
+                      (throw (ex-info "No component(s) in path(s)." {:paths extras})))
                     (->> ((if reverse?
                             dep/transitive-dependents-set
                             dep/transitive-dependencies-set)
@@ -440,10 +455,10 @@ is thrown if this condition is not satisfied."}
         system
         (let [system (try
                        (action system path)
-                       (catch clojure.lang.ExceptionInfo ex
+                       (catch #?(:clj clojure.lang.ExceptionInfo :cljs :default) ex
                          (reset! exception ex)
                          system)
-                       (catch Throwable ex
+                       (catch #?(:clj Throwable :cljs :default) ex
                          (reset! exception (action-exception system path :unknown ex))
                          system))]
           (if @exception
@@ -483,8 +498,7 @@ is thrown if this condition is not satisfied."}
     (assoc-in system (conj com-path :cx/value) new-value)))
 
 (defmacro defaction [name action-class [system-arg com-path-arg] & body]
-  {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)
-         (contains? @can-run-on-status action-class)]}
+  {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)]}
   `(defn- ~name [~system-arg ~com-path-arg]
      (let [action-class# ~action-class
            system-arg#   ~system-arg
