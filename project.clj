@@ -8,7 +8,6 @@
   :profiles {:dev
              {:dependencies [[org.clojure/clojure "1.8.0"]
                              [org.clojure/clojurescript "1.7.228"]
-                             ;; [org.clojure/clojurescript "1.9.183"]
                              [com.cemerick/piggieback "0.2.2"]]}
              }
   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
