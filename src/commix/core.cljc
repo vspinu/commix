@@ -27,8 +27,7 @@ Exception is thrown if this condition is not satisfied."}
   (atom {:init #{:init :resume}
          :resume #{:init :resume}
          :halt #{:ALL}
-         :suspend #{:ALL}
-         }))
+         :suspend #{:ALL}}))
 
 (def ^{:doc "When action :A is performed on a component, all the component's
 dependents must have their status in (:A @required-dependent-status). Exception
@@ -37,8 +36,7 @@ is thrown if this condition is not satisfied."}
   (atom {:init #{:ALL}
          :resume #{:ALL}
          :halt #{:halt nil}
-         :suspend #{:suspend :halt nil}
-         }))
+         :suspend #{:suspend :halt nil}}))
 
 (def ^{:doc
        "If action :A can run after :B then :B must be in (:A @can-run-on-status).
@@ -357,7 +355,7 @@ If this condition is not satisfied action is not performed (silently)."}
   (transitive-dependencies graph-or-sys paths true exclude-self?))
 
 
-;;; KEYED GENERICS
+;;; KEYED METHODS
 
 (defn- com-dispatch-fn [config _]
   (or (:cx/key config)
@@ -391,8 +389,8 @@ If this condition is not satisfied action is not performed (silently)."}
   {:arglists '([config value])}
   com-dispatch-fn)
 
-(defmethod resume-key :default [k v]
-  (init-key k v))
+(defmethod resume-key :default [c v]
+  (init-key c v))
 
 (defmulti suspend-key
   "Suspend a running implementation associated with a key, so that it may be
@@ -402,8 +400,8 @@ If this condition is not satisfied action is not performed (silently)."}
   {:arglists '([config value])}
   com-dispatch-fn)
 
-(defmethod suspend-key :default [k v]
-  (halt-key k v))
+(defmethod suspend-key :default [c v]
+  (halt-key c v))
 
 
 ;;; ACTIONS
@@ -576,13 +574,6 @@ If this condition is not satisfied action is not performed (silently)."}
   All components that depend on this component will be also suspended."
   {:arglists '([system] [system paths])}
   system-dispatch-fn)
-
-(comment
-
-  #?(:cljs (init {:ddd (com {:par1 1})}))
-
-  )
-
 
 (defmethod suspend :default
   [system & [paths]]

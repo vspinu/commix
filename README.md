@@ -63,7 +63,7 @@ for further manipulation or `halt`.
 
 To install, add the following to your project `:dependencies`:
 
-    ;; not on clojars yet
+    ;; not on clojars yet, still in early alpha stage
     [commix "0.1.0"]
 
 
