@@ -1,4 +1,4 @@
-(defproject commix "0.1.0"
+(defproject commix "0.1.0-ALPHA"
   :description "Micro-framework for data-driven composable system architectures"
   :url "https://github.com/vspinu/commix"
   :license {:name "The MIT License"

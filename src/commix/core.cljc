@@ -491,10 +491,9 @@ If this condition is not satisfied action is not performed (silently)."}
 
 (defn- update-value-in [system com-path f]
   (let [node (get-filled-config-with-deps system com-path)
-        new-value (f (-> node
-                         (dissoc :cx/value)
-                         (assoc :cx/system system
-                                :cx/path com-path))
+        new-value (f (assoc node
+                            :cx/system system
+                            :cx/path com-path)
                      (:cx/value node))]
     (assoc-in system (conj com-path :cx/value) new-value)))
 
