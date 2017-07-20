@@ -165,11 +165,13 @@ If this condition is not satisfied action is not performed (silently)."}
         :cx/identity)
       (throw (ex-info "Invalid com." {:object x})))))
 
-(defn- com-conf [x]
+(defn- com-conf
+  "Get configuration component from a com."
+  [x]
   (if (com-seq? x)
     (last x)
     (if (com-map? x)
-      (dissoc x :cx/key :cx/value)
+      (dissoc x :cx/key :cx/value :cx/status :cx/path :cx/system)
       (throw (ex-info "Invalid com." {:object x})))))
 
 (defn expand-config [config]
@@ -261,15 +263,16 @@ If this condition is not satisfied action is not performed (silently)."}
 
 (defn- get-refs
   "Get set of refs in object v."
-  [v]
-  (let [refs-in-map (fn [v]
+  [v & [path]]
+  (let [path (or path [])
+        refs-in-map (fn [v path]
                       (reduce-kv (fn [s k v]
                                    (if (com? v)
-                                     (conj s [k])
-                                     (into s (get-refs v))))
+                                     (conj s (conj path k))
+                                     (into s (get-refs v (conj path k)))))
                                  #{} v))]
     (cond (ref? v)  #{(ref-key v)}
-          (map? v)  (refs-in-map v)
+          (map? v)  (refs-in-map v path)
           (coll? v) (set (mapcat get-refs v))
           :else     #{})))
 
@@ -280,6 +283,10 @@ If this condition is not satisfied action is not performed (silently)."}
         (map (fn [[k v]] [k (get-refs v)])
              flat-conf)))
 
+;; (all-refs (flatten {:z (com {:a  (com {})
+;;                              :b  {:c (com {})
+;;                                   :d (com {})}
+;;                              ::d {}})}))
 
 ;;; DEPS
 
@@ -357,51 +364,50 @@ If this condition is not satisfied action is not performed (silently)."}
 
 ;;; KEYED METHODS
 
-(defn- com-dispatch-fn [config _]
-  (or (:cx/key config)
-      (throw (ex-info "Missing :cx/key in com config." {:config config}))))
+(defn- com-dispatch-fn [node]
+  (or (:cx/key node)
+      (throw (ex-info "Missing :cx/key in system node." {:config node}))))
 
-(defmulti init-key
+(defmulti init-node
   "Turn a config value associated with a key into a concrete implementation.
   In order to avoid bugs due to typos there is no default method for
-  `init-key'."
-  {:arglists '([config value])}
+  `init-node'."
+  {:arglists '([node])}
   com-dispatch-fn)
 
-(defmethod init-key :cx/identity [_ v] v)
+(defmethod init-node :cx/identity [node]
+  ;; Not dissoccing other special keys. Otherwise would need to dissoc
+  ;; recursively for other nested :cx/identity components.
+  (dissoc node :cx/path :cx/system))
 
-(defmulti halt-key
-  "Halt a running or suspended implementation associated with a key.
-  Often used for stopping processes or cleaning up resources.
-
-  As with other key methods the return of `halt-key' is inserted into the system
-  map, this could be used for statistics reports and inspection of the stopped
+(defmulti halt-node
+  "Halt a running or suspended node.
+  Often used for stopping processes or cleaning up resources. As with other key
+  methods the return of `halt-node' is inserted into the system map, this could
+  be used for statistics reports and inspection of the stopped
   components. Default method is an identity."
-  {:arglists '([config value])}
+  {:arglists '([node])}
   com-dispatch-fn)
 
-(defmethod halt-key :default [_ v] v)
+(defmethod halt-node :default [node] (:cx/value node))
 
-(defmulti resume-key
-  "Turn a config value associated with a key into a concrete implementation,
-  but reuse resources (e.g. connections, running threads, etc). By default this
-  multimethod calls init-key."
-  {:arglists '([config value])}
+(defmulti resume-node
+  "Resume a previously suspended node.
+  By default calls `init-node'."
+  {:arglists '([node])}
   com-dispatch-fn)
 
-(defmethod resume-key :default [c v]
-  (init-key c v))
+(defmethod resume-node :default [node]
+  (init-node node))
 
-(defmulti suspend-key
-  "Suspend a running implementation associated with a key, so that it may be
-  eventually passed to resume-key. By default this multimethod calls halt-key,
-  but it may be customized to do things like keep a server running, but buffer
-  incoming requests until the server is resumed."
-  {:arglists '([config value])}
-  com-dispatch-fn)
+(defmulti suspend-node
+  "Suspend a running node, so that it may be eventually passed to resume-node.
+  By default this multimethod calls halt-node, but it may be customized to do
+  things like keep a server running, but buffer incoming requests until the
+  server is resumed." {:arglists '([node])} com-dispatch-fn)
 
-(defmethod suspend-key :default [c v]
-  (halt-key c v))
+(defmethod suspend-node :default [node]
+  (halt-node node))
 
 
 ;;; ACTIONS
@@ -472,8 +478,8 @@ If this condition is not satisfied action is not performed (silently)."}
   (walk/prewalk #(if (com? %) (:cx/value %) %)
                 (get-in system path)))
 
-(defn- fill-obj-with-config [system com-path]
-  (update-in system com-path #(assoc % :cx/value (com-conf %))))
+;; (defn- fill-obj-with-config [system com-path]
+;;   (update-in system com-path #(assoc % :cx/value (com-conf %))))
 
 (defn- get-filled-config-with-deps [system com-path]
   (let [filler #(walk/postwalk
@@ -483,31 +489,31 @@ If this condition is not satisfied action is not performed (silently)."}
                         (make-value system dp))
                       v))
                   %)]
-    (let [obj-path (conj com-path :cx/value)
-          system   (if (get-in system obj-path)
-                     system
-                     (fill-obj-with-config system com-path))]
+    (let [val-path (conj com-path :cx/value)
+          ;; system   (if (get-in system val-path)
+          ;;            system
+          ;;            (fill-obj-with-config system com-path))
+          ]
       (filler (get-in system com-path)))))
 
 (defn- update-value-in [system com-path f]
-  (let [node (get-filled-config-with-deps system com-path)
+  (let [node      (get-filled-config-with-deps system com-path)
         new-value (f (assoc node
                             :cx/system system
-                            :cx/path com-path)
-                     (:cx/value node))]
+                            :cx/path com-path))]
     (assoc-in system (conj com-path :cx/value) new-value)))
 
 (defaction init-com :init [system com-path]
-  (update-value-in system com-path init-key))
+  (update-value-in system com-path init-node))
 
 (defaction halt-com :halt [system com-path]
-  (update-value-in system com-path halt-key))
+  (update-value-in system com-path halt-node))
 
 (defaction suspend-com :suspend [system com-path]
-  (update-value-in system com-path suspend-key))
+  (update-value-in system com-path suspend-node))
 
 (defaction resume-com :resume [system com-path]
-  (update-value-in system com-path resume-key))
+  (update-value-in system com-path resume-node))
 
 (defn- resume-or-init-com [system com-path]
   (-> system
@@ -522,7 +528,7 @@ If this condition is not satisfied action is not performed (silently)."}
 
 (defmulti init
   "Turn config into a system map.
-  Keys are traversed in dependency order and initiated via the init-key."
+  Keys are traversed in dependency order and initiated via the init-node."
   {:arglists '([config] [config paths])}
   system-dispatch-fn)
 
@@ -535,7 +541,7 @@ If this condition is not satisfied action is not performed (silently)."}
      (run-action system deps init-com))))
 
 (defmulti halt
-  "Halt a system map by applying `halt-key' in reverse dependency order."
+  "Halt a system map by applying `halt-node' in reverse dependency order."
   {:arglists '([system] [system paths])}
   system-dispatch-fn)
 
@@ -578,3 +584,4 @@ If this condition is not satisfied action is not performed (silently)."}
   [system & [paths]]
   (let [deps (dependents system paths)]
     (run-action system deps suspend-com)))
+

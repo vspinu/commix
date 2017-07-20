@@ -97,21 +97,22 @@ References are keys or vectors of keys marked with [`cx/ref`](#specifying-refere
 
 Life-cycle behaviors are encapsulated in prototype keys (`:ns/prototype-A`,
 `:ns/prototype-B`, `:ns2/prototype2`) through multimethods which dispatch on
-keys - `init-key`, `halt-key` etc. See [Life-cycle Methods][#life-cycle-methods-init-key-halt-key-etc].
+these keys within nodes - `init-node`, `halt-node`
+etc. See [Life-cycle Methods][#life-cycle-methods-init-node-halt-node-etc].
 
 
 ```clojure
-(defmethod cx/init-key :ns1/prototype-A [{:keys [param1 param2 param3] :as config} _]
+(defmethod cx/init-node :ns1/prototype-A [{:keys [param1 param2 param3] :as config} _]
   (do-something-with param1 param2 param3))
 
-(defmethod cx/halt-key :ns1/prototype-A [_ v]
+(defmethod cx/halt-node :ns1/prototype-A [_ v]
   (stop-resources v))
 ```
 
 The value returned by life-cycle methods is substituted into the system map,
 ready to be passed to the next life-cycle method.
 
-_Simple Example:_
+_A Simple Example:_
 
 ```clojure
 
@@ -119,14 +120,14 @@ _Simple Example:_
 
 (require '[commix.core :as cx])
 
-(defmethod cx/init-key :timer/periodically [{:keys [timeout action]} _]
+(defmethod cx/init-node :timer/periodically [{:keys [timeout action]}]
   (let [now   #(quot (System/currentTimeMillis) 1000)
         start (now)]
     (future (while true
               (Thread/sleep timeout)
               (action (- (now) start))))))
 
-(defmethod cx/halt-key :timer/periodically [_ v]
+(defmethod cx/halt-node :timer/periodically [{v :cx/value}]
   (future-cancel v))
 
 ;; 2) System Config:
@@ -177,7 +178,7 @@ There are 2 ways to declare components:
    }
   ```
 
-2. _Using Integrant syntax_
+2. _Using Integrant's syntax_
 
   ```clojure
   {
@@ -264,45 +265,48 @@ stand-alone configs. The following would be a valid config:
                   {:x (cx/ref :sub-system1)})})
 ```
 
-### Life-cycle Methods: `init-key`, `halt-key` etc.
+### Life-cycle Methods: `init-node`, `halt-node` etc.
 
-Components are instantiated from prototype keys which encapsulate life-cycle
-behaviors. All methods receive two arguments, a config map and the value.
+Life cycles of components is controlled by Clojure multi-methods `init-node`,
+`halt-node`, `suspend-node`, `resume-node` etc. All methods receive one
+argument - a node in the system map. 
 
-First argument, the config map, is the original configuration of the components
-with all `cx/refs` expanded to instantiated dependencies. It also contains a
-range of special keys:
+A node is the original config map of the component with all the `cx/refs`
+expanded to initialized dependencies. Nodes also contain a range of `:cx` keys:
 
  - `:cx/key` - key on which life-cyle multi-methods are dispatched
+ - `:cx/value` - value returned by the previous life-cycles method
  - `:cx/status` - action class of the last action ran on this node (`:init`, `:halt` etc.)
  - `:cx/path` - path to the component within the system
  - `:cx/system` - whole system (discouraged!)
 
-While life-cycle methods can access the whole system through `:cx/system` keys,
-its use is discouraged. The core idea of a "component" is that it can exist in
-isolation and it's likely that you can achieve what you want with explicit use
-of dependencies.
-
-Second argument, value, is different for different methods, but it's always the
-value which was returned by a method in previous action. For instance `inti-key`
-will likely nil if there was no other method run before it. `halt` and `suspend`
-receive an instanciated component. `Resume-key` receives value returned by
-`syspend-key`.
+Value received in `:cx/value` slot is different for different methods, but it's
+always the value which was returned by a method in previous action. For instance
+`init-node` will likely receive nil if there was no other method run before
+it. `halt-node` and `suspend-node` both receive value returned by
+`init-node`. `Resume-node` receives value returned by `syspend-node`. Thus,
+value is of primary interest to all life-cycle methods except `init-node`, for
+which it is commonly `nil`.
 
 Default methods are defined for all life-cycle multi-methods except for
-`init-key`. Default method for `halt-key` is identity; for `suspend-key` and
-`resume-key` default methods are `halt-key` and `init-key` respectively.
+`init-node`. Default method for `halt-node` is identity; for `suspend-node` and
+`resume-node` default methods are `halt-node` and `init-node` respectively.
+
+While life-cycle methods can access the whole system through `:cx/system` keys,
+this pattern is discouraged. The core idea of a "component" is that it can exist
+in isolation and it is likely that you can achieve the same effect with explicit
+use of dependencies.
 
 
 ```clojure
-(defmethod cx/init-key :default [config value]
+(defmethod cx/init-node :default [{:keys [param1 param2] :as config}]
   (do
-    (something with config value)
+    (something with config, param1 and param2)
     ,,,
     (return initialized component)))
 
-(defmethod cx/halt-key :default [config value]
-  (halt value and return whatever you think is useful))
+(defmethod cx/halt-node :default [{obj :cx/value}]
+  (halt obj and return whatever you think is useful))
 ```
 ### Life-cycle Actions: `init`, `halt` etc.
 
@@ -384,10 +388,10 @@ but the following will
 
 ```clojure
 
-(defmethod cx/init-key :tt/tmp [_ _] [:on])
-(defmethod cx/halt-key :tt/tmp [_ _] [:stopped])
-(defmethod cx/resume-key :tt/tmp [_ _] [:resumed])
-(defmethod cx/suspend-key :tt/tmp [_ _] [:suspended])
+(defmethod cx/init-node :tt/tmp [_] [:on])
+(defmethod cx/halt-node :tt/tmp [_] [:stopped])
+(defmethod cx/resume-node :tt/tmp [_] [:resumed])
+(defmethod cx/suspend-node :tt/tmp [_] [:suspended])
 
 (reset! #'cx/*trace-function* println)
 
@@ -495,11 +499,13 @@ namespaces are ignored.
 
 ## How it works
 
-System map is the expanded config map with each component additionally
-containing a bunch of special keys - `:cx/key` (dispatch key), `:cx/status`
-(previous action class), `:cx/value` (return value of the last life-cycle method
-run on this node). Each life-cycle action runs on these nodes in dependency
-order and substitutes `:cx/value`. That's it.
+System map is the expanded config map with each node additionally containing a
+bunch of special keys - `:cx/key` (dispatch key), `:cx/status` (previous action
+class), `:cx/value` (return value of the last life-cycle method run on this
+node). Each [life-cycle action](#life-cycle-actions-init-halt-etc) runs
+its [life-cycle method](#life-cycle-methods-init-node-halt-node-etc) on system
+nodes in dependency order and substitutes `:cx/value` by the return value the
+method. That's it.
 
 ## License
 

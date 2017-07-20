@@ -8,18 +8,18 @@
 (defn simplify-keys [config]
   (walk/postwalk #(if (#'cx/namespaced-keyword? %) (keyword (name %)) %) config))
 
-(defmethod cx/init-key :default [c v]
-  (let [c c
-        v v]
+(defmethod cx/init-node :default [{:keys [:cx/value] :as node}]
+  (let [n node
+        v value]
    [:on]))
 
-(defmethod cx/halt-key :default [c v]
+(defmethod cx/halt-node :default [_]
   [:stopped])
 
-(defmethod cx/resume-key :default [c v]
+(defmethod cx/resume-node :default [_]
   [:resumed])
 
-(defmethod cx/suspend-key :default [c v]
+(defmethod cx/suspend-node :default [_]
   [:suspended])
 
 (defn throw-ex-handler [system ex]
@@ -413,20 +413,22 @@
                 :d (cx/com {:k [(cx/ref [:a :b])
                                 (cx/ref [:a :c])]
                             :l (cx/ref :a)})}]
-    (defmethod cx/init-key :tt/z [_ v]
-      (vals v))
+    (defmethod cx/init-node :tt/z [node]
+      (vals (:cx/value node)))
 
     (is (= (-> config
                (cx/init)
                (cx/values))
            {[:d]    {:k [[:on] [:on]]
                      :l {:b [:on]
-                         :c [:on]}},
+                         :c [:on]}
+                     :cx/key :cx/identity},
             [:a :b] [:on],
             [:a :c] [:on]}))))
 
 
 (deftest com-expands-in-quoted-configs-test
+
   (def com-config {:param 1})
 
   #?(:clj
@@ -477,20 +479,80 @@
           (-> config-no-ref
               (cx/init))))))
 
+(deftest dependency-graph-test
+  (let [conf {:z (cx/com {:a  (cx/com {})
+                          :b  {:c (cx/com {})
+                               :d (cx/com {})}
+                          ::d {}})}
+        dep-graph (#'cx/dependency-graph conf)]
+    (is (= (:dependencies dep-graph)
+           {[:z] #{[:z :b :c] [:z :b :d] [:z :a] [:z :commix.core-test/d] :commix.core/ROOT},
+            [:z :a] #{:commix.core/ROOT},
+            [:z :b :c] #{:commix.core/ROOT},
+            [:z :b :d] #{:commix.core/ROOT},
+            [:z :commix.core-test/d] #{:commix.core/ROOT}}))
+    (is (= (:dependents dep-graph)
+           {:commix.core/ROOT
+            #{[:z :b :c] [:z :b :d] [:z :a] [:z] [:z :commix.core-test/d]},
+            [:z :b :d] #{[:z]},
+            [:z :commix.core-test/d] #{[:z]},
+            [:z :a] #{[:z]},
+            [:z :b :c] #{[:z]}}))))
+
+
+
+;;; Following Tests Overwrite :default Methods!!
+
+(deftest value-path-status-node-test
+
+  (defmethod cx/init-node :default [{:keys [:cx/path :cx/status :cx/value] :as node}]
+    [{:path path :status status :value value}])
+
+  (let [conf {:z (cx/com ::root
+                   {:a  (cx/com ::aa {:a 1})
+                    :b  {:c (cx/com :bb {:b 2})
+                         :d (cx/com {})}
+                    ::d {}})}]
+    ;; (cx/init conf))
+    (is (= (cx/init conf)
+           {:z
+            {:a
+             {:a 1,
+              :cx/key :commix.core-test/aa,
+              :cx/status :init,
+              :cx/value [{:path [:z :a], :status nil, :value nil}]},
+             :b
+             {:c
+              {:b 2,
+               :cx/key :bb,
+               :cx/status :init,
+               :cx/value [{:path [:z :b :c], :status nil, :value nil}]},
+              :d
+              {:cx/key :cx/identity,
+               :cx/status :init,
+               :cx/value {:cx/key :cx/identity}}},
+             :commix.core-test/d
+             {:cx/key :commix.core-test/d,
+              :cx/status :init,
+              :cx/value [{:path [:z :commix.core-test/d], :status nil, :value nil}]},
+             :cx/key :commix.core-test/root,
+             :cx/status :init,
+             :cx/value [{:path [:z], :status nil, :value nil}]}}))))
+
 (comment
 
   ;; 1) Define components:
 
   (require '[commix.core :as cx])
 
-  (defmethod cx/init-key :timer/periodically [k {:keys [timeout action]}]
+  (defmethod cx/init-node :timer/periodically [k {:keys [timeout action]}]
     (let [now   #(quot (System/currentTimeMillis) 1000)
           start (now)]
       (future (while true
                 (Thread/sleep timeout)
                 (action k (- (now) start))))))
 
-  (defmethod cx/halt-key :timer/periodically [k v]
+  (defmethod cx/halt-node :timer/periodically [k v]
     (future-cancel v))
 
   ;; 2) Define and run your system
@@ -536,7 +598,7 @@
       :routes nil
       :handlers nil))
 
-  (defmethod cx/init-key [c _]
+  (defmethod cx/init-node [c _]
     (do-what-duct.module/ataraxy-does-with c))
 
 
