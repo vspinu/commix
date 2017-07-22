@@ -269,16 +269,30 @@ stand-alone configs. The following would be a valid config:
 
 Life cycles of components is controlled by Clojure multi-methods `init-node`,
 `halt-node`, `suspend-node`, `resume-node` etc. All methods receive one
-argument - a node in the system map. 
+argument - a node in the system map.
 
-A node is the original config map of the component with all the `cx/refs`
-expanded to initialized dependencies. Nodes also contain a range of `:cx` keys:
+Nodes are how Commix represents components within the system map. Nodes are
+passed to life-cycle methods. Each node is the original config map of the
+component with all the `cx/refs` expanded to initialized dependencies. Nodes
+also contain some special `:cx` keys:
 
  - `:cx/key` - key on which life-cyle multi-methods are dispatched
  - `:cx/value` - value returned by the previous life-cycles method
  - `:cx/status` - action class of the last action ran on this node (`:init`, `:halt` etc.)
  - `:cx/path` - path to the component within the system
  - `:cx/system` - whole system (discouraged!)
+
+
+```clojure
+(defmethod cx/init-node :some-ns/some-key [{:keys [param1 param2 :cx/key :cx/path] :as config}]
+  (do
+    (something with config, param1, param2, key and path)
+    ,,,
+    (return initialized component)))
+
+(defmethod cx/halt-node :default [{obj :cx/value}]
+  (halt obj and return whatever you think is useful))
+```
 
 Value received in `:cx/value` slot is different for different methods, but it's
 always the value which was returned by a method in previous action. For instance
@@ -297,17 +311,6 @@ this pattern is discouraged. The core idea of a "component" is that it can exist
 in isolation and it is likely that you can achieve the same effect with explicit
 use of dependencies.
 
-
-```clojure
-(defmethod cx/init-node :default [{:keys [param1 param2] :as config}]
-  (do
-    (something with config, param1 and param2)
-    ,,,
-    (return initialized component)))
-
-(defmethod cx/halt-node :default [{obj :cx/value}]
-  (halt obj and return whatever you think is useful))
-```
 ### Life-cycle Actions: `init`, `halt` etc.
 
 All life-cycle actions (`init`, `halt`, `suspend` and `resume`) take in a system
