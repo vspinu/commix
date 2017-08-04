@@ -97,15 +97,14 @@ References are keys or vectors of keys marked with [`cx/ref`](#specifying-refere
 
 Life-cycle behaviors are encapsulated in prototype keys (`:ns/prototype-A`,
 `:ns/prototype-B`, `:ns2/prototype2`) through multimethods which dispatch on
-these keys within nodes - `init-node`, `halt-node`
-etc. See [Life-cycle Methods][#life-cycle-methods-init-node-halt-node-etc].
+these keys - `init-com`, `halt-com` etc. See [Life-cycle Methods][#life-cycle-methods-init-com-halt-com-etc].
 
 
 ```clojure
-(defmethod cx/init-node :ns1/prototype-A [{:keys [param1 param2 param3] :as config} _]
+(defmethod cx/init-com :ns1/prototype-A [{:keys [param1 param2 param3] :as config} _]
   (do-something-with param1 param2 param3))
 
-(defmethod cx/halt-node :ns1/prototype-A [_ v]
+(defmethod cx/halt-com :ns1/prototype-A [_ v]
   (stop-resources v))
 ```
 
@@ -120,14 +119,14 @@ _A Simple Example:_
 
 (require '[commix.core :as cx])
 
-(defmethod cx/init-node :timer/periodically [{:keys [timeout action]}]
+(defmethod cx/init-com :timer/periodically [{:keys [timeout action]}]
   (let [now   #(quot (System/currentTimeMillis) 1000)
         start (now)]
     (future (while true
               (Thread/sleep timeout)
               (action (- (now) start))))))
 
-(defmethod cx/halt-node :timer/periodically [{v :cx/value}]
+(defmethod cx/halt-com :timer/periodically [{v :cx/value}]
   (future-cancel v))
 
 ;; 2) System Config:
@@ -265,56 +264,54 @@ stand-alone configs. The following would be a valid config:
                   {:x (cx/ref :sub-system1)})})
 ```
 
-### Life-cycle Methods: `init-node`, `halt-node` etc.
+### Life-cycle Methods: `init-com`, `halt-com` etc.
 
-Life cycles of components is controlled by Clojure multi-methods `init-node`,
-`halt-node`, `suspend-node`, `resume-node` etc. All methods receive one
-argument - a node in the system map.
+Life cycles of components is controlled by Clojure multi-methods `init-com`,
+`halt-com`, `suspend-com`, `resume-com` etc. All methods receive one argument -
+a component from the system map.
 
-Nodes are how Commix represents components within the system map. Nodes are
-passed to life-cycle methods. Each node is the original config map of the
-component with all the `cx/refs` expanded to initialized dependencies. Nodes
-also contain some special `:cx` keys:
+Commix represents components as plain maps. Each component is the original
+config map with all the `cx/refs` expanded to the initialized
+dependencies. Components also contain a range of special `:cx` keys:
 
- - `:cx/key` - key on which life-cyle multi-methods are dispatched
- - `:cx/value` - value returned by the previous life-cycles method
+ - `:cx/key`    - key on which life-cyle multi-methods are dispatched
+ - `:cx/value`  - value returned by the previous life-cycles method
  - `:cx/status` - action class of the last action ran on this node (`:init`, `:halt` etc.)
- - `:cx/path` - path to the component within the system
- - `:cx/system` - whole system (discouraged!)
-
+ - `:cx/path`   - path to the component within the system
+ - `:cx/system` - whole system (use discouraged!)
 
 ```clojure
-(defmethod cx/init-node :some-ns/some-key [{:keys [param1 param2 :cx/key :cx/path] :as config}]
+(defmethod cx/init-com :some-ns/some-key [{:keys [param1 param2 :cx/key :cx/path] :as config}]
   (do
     (something with config, param1, param2, key and path)
     ,,,
     (return initialized component)))
 
-(defmethod cx/halt-node :default [{obj :cx/value}]
+(defmethod cx/halt-com :default [{obj :cx/value}]
   (halt obj and return whatever you think is useful))
 ```
 
 Value received in `:cx/value` slot is different for different methods, but it's
 always the value which was returned by a method in previous action. For instance
-`init-node` will likely receive nil if there was no other method run before
-it. `halt-node` and `suspend-node` both receive value returned by
-`init-node`. `Resume-node` receives value returned by `syspend-node`. Thus,
-value is of primary interest to all life-cycle methods except `init-node`, for
-which it is commonly `nil`.
+`init-com` will likely receive nil if there was no other method run before
+it. `halt-com` and `suspend-com` most likely receive the value returned by
+`init-com`. `Resume-node` receives value returned by `syspend-node`. So,
+`:cx/value` is likely to be of primary interest to all life-cycle methods except
+`init-com`.
 
 Default methods are defined for all life-cycle multi-methods except for
-`init-node`. Default method for `halt-node` is identity; for `suspend-node` and
-`resume-node` default methods are `halt-node` and `init-node` respectively.
+`init-com`. Default method for `halt-com` is identity; for `suspend-com` and
+`resume-com` default methods are `halt-com` and `init-com` respectively.
 
 While life-cycle methods can access the whole system through `:cx/system` keys,
-this pattern is discouraged. The core idea of a "component" is that it can exist
-in isolation and it is likely that you can achieve the same effect with explicit
-use of dependencies.
+its use is discouraged. The core idea of a "component" is that it can exist in
+isolation and it is very likely that you can achieve the same effect only by an
+explicit use of dependencies.
 
 ### Life-cycle Actions: `init`, `halt` etc.
 
 All life-cycle actions (`init`, `halt`, `suspend` and `resume`) take in a system
-map and optional paths and return a system map. Configuration stage is also part
+map, optional path(s) and return a system map. Configuration stage is also part
 of the life-cycle - `config == uninitialized system` and 'init' action is no
 more special than any other actions.
 
@@ -391,10 +388,10 @@ but the following will
 
 ```clojure
 
-(defmethod cx/init-node :tt/tmp [_] [:on])
-(defmethod cx/halt-node :tt/tmp [_] [:stopped])
-(defmethod cx/resume-node :tt/tmp [_] [:resumed])
-(defmethod cx/suspend-node :tt/tmp [_] [:suspended])
+(defmethod cx/init-com :tt/tmp [_] [:on])
+(defmethod cx/halt-com :tt/tmp [_] [:stopped])
+(defmethod cx/resume-com :tt/tmp [_] [:resumed])
+(defmethod cx/suspend-com :tt/tmp [_] [:suspended])
 
 (reset! #'cx/*trace-function* println)
 
@@ -438,7 +435,7 @@ By default Commix never throws. It always returns a valid system map for further
 inspection or halt. Exception handling is done with `cx/*exception-handler*`
 which by default pretty prints the exeption to stdout.
 
-If you want to throw like in other life-cycle frameworks, change the handler:
+If you want to throw, just change the handler:
 
 
 ```clojure
@@ -469,7 +466,7 @@ cycle methods.
 ```
 
 New custom actions are straightforward to write. See the documentation of
-`defaction` and `run-action` and see the source code of the built-in action for
+`def-path-action` and `run-path-action` and see the source code of the built-in action for
 a self-explanatory tutorial. See also [How it works][#how-it-works] below.
 
 All built-in life-cycle actions are graph-isomorphic in the sense that they
@@ -506,7 +503,7 @@ System map is the expanded config map with each node additionally containing a
 bunch of special keys - `:cx/key` (dispatch key), `:cx/status` (previous action
 class), `:cx/value` (return value of the last life-cycle method run on this
 node). Each [life-cycle action](#life-cycle-actions-init-halt-etc) runs
-its [life-cycle method](#life-cycle-methods-init-node-halt-node-etc) on system
+its [life-cycle method](#life-cycle-methods-init-com-halt-com-etc) on system
 nodes in dependency order and substitutes `:cx/value` by the return value the
 method. That's it.
 

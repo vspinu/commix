@@ -6,8 +6,8 @@
             [clojure.string :as str]
             #?(:clj  [clojure.pprint]
                :cljs [cljs.pprint]))
-  #?(:cljs (:require-macros [commix.macros :refer [defaction]])
-     :clj (:require [commix.macros :refer [defaction]])))
+  #?(:cljs (:require-macros [commix.macros :refer [def-path-action]])
+     :clj (:require [commix.macros :refer [def-path-action]])))
 
 (defn default-exception-handler [system ex]
   #?(:clj  (clojure.pprint/pprint ex)
@@ -76,23 +76,23 @@ If this condition is not satisfied action is not performed (silently)."}
                     (flatten fmap (conj (vec k) k1) v1))
                   fmap
                   v)))))
-(defn nodes
-  "Get all component names from the system graph."
+(defn com-paths
+  "Return paths to all components in the system map."
   [system]
   (set/difference (dep/nodes (-> system meta ::graph))
                   #{::ROOT}))
 
 (defn values
-  "Get a flat map of instantiated components from the system map."
+  "Get a flat map of instantiated components (aka values) from the system map."
   [system]
   (into (sorted-map)
         (map #(vector % (get-in system (conj % :cx/value)))
-             (nodes system))))
+             (com-paths system))))
 
 (defn status
   "Get a grouped map of components by last run action."
   [system]
-  (let [coms (nodes system)]
+  (let [coms (com-paths system)]
     (->> coms
          (map #(vector % (get-in system (conj % :cx/status))))
          (group-by second)
@@ -368,46 +368,46 @@ If this condition is not satisfied action is not performed (silently)."}
   (or (:cx/key node)
       (throw (ex-info "Missing :cx/key in system node." {:config node}))))
 
-(defmulti init-node
+(defmulti init-com
   "Turn a config value associated with a key into a concrete implementation.
   In order to avoid bugs due to typos there is no default method for
-  `init-node'."
+  `init-com'."
   {:arglists '([node])}
   com-dispatch-fn)
 
-(defmethod init-node :cx/identity [node]
+(defmethod init-com :cx/identity [node]
   ;; Not dissoccing other special keys. Otherwise would need to dissoc
   ;; recursively for other nested :cx/identity components.
   (dissoc node :cx/path :cx/system))
 
-(defmulti halt-node
+(defmulti halt-com
   "Halt a running or suspended node.
   Often used for stopping processes or cleaning up resources. As with other key
-  methods the return of `halt-node' is inserted into the system map, this could
+  methods the return of `halt-com' is inserted into the system map, this could
   be used for statistics reports and inspection of the stopped
   components. Default method is an identity."
   {:arglists '([node])}
   com-dispatch-fn)
 
-(defmethod halt-node :default [node] (:cx/value node))
+(defmethod halt-com :default [node] (:cx/value node))
 
-(defmulti resume-node
+(defmulti resume-com
   "Resume a previously suspended node.
-  By default calls `init-node'."
+  By default calls `init-com'."
   {:arglists '([node])}
   com-dispatch-fn)
 
-(defmethod resume-node :default [node]
-  (init-node node))
+(defmethod resume-com :default [node]
+  (init-com node))
 
-(defmulti suspend-node
-  "Suspend a running node, so that it may be eventually passed to resume-node.
-  By default this multimethod calls halt-node, but it may be customized to do
+(defmulti suspend-com
+  "Suspend a running node, so that it may be eventually passed to resume-com.
+  By default this multimethod calls halt-com, but it may be customized to do
   things like keep a server running, but buffer incoming requests until the
   server is resumed." {:arglists '([node])} com-dispatch-fn)
 
-(defmethod suspend-node :default [node]
-  (halt-node node))
+(defmethod suspend-com :default [node]
+  (halt-com node))
 
 
 ;;; ACTIONS
@@ -432,14 +432,14 @@ If this condition is not satisfied action is not performed (silently)."}
         (let [status (get-in system (conj dp :cx/status))]
           (when-not (contains? required status)
             (throw (ex-info (format "Wrong %s status." (if reverse? "dependent" "dependency"))
-                            (merge {:com-path   com-path
-                                    :action action
+                            (merge {:com-path        com-path
+                                    :action          action
                                     :required-status required}
                                    (if reverse?
-                                     {:dependent                 dp
-                                      :dependent-status          status}
-                                     {:dependency                 dp
-                                      :dependency-status          status}))))))))))
+                                     {:dependent        dp
+                                      :dependent-status status}
+                                     {:dependency        dp
+                                      :dependency-status status}))))))))))
 
 
 (defn action-exception [system com-path action-class ex]
@@ -451,7 +451,7 @@ If this condition is not satisfied action is not performed (silently)."}
             :ex ex}
            ex))
 
-(defn run-action [system paths action]
+(defn run-path-action [system paths action]
   (let [exception  (atom nil)]
     (loop [completed      ()
            [path & paths] paths
@@ -503,22 +503,22 @@ If this condition is not satisfied action is not performed (silently)."}
                             :cx/path com-path))]
     (assoc-in system (conj com-path :cx/value) new-value)))
 
-(defaction init-com :init [system com-path]
-  (update-value-in system com-path init-node))
+(def-path-action init-path :init [system com-path]
+  (update-value-in system com-path init-com))
 
-(defaction halt-com :halt [system com-path]
-  (update-value-in system com-path halt-node))
+(def-path-action halt-path :halt [system com-path]
+  (update-value-in system com-path halt-com))
 
-(defaction suspend-com :suspend [system com-path]
-  (update-value-in system com-path suspend-node))
+(def-path-action suspend-path :suspend [system com-path]
+  (update-value-in system com-path suspend-com))
 
-(defaction resume-com :resume [system com-path]
-  (update-value-in system com-path resume-node))
+(def-path-action resume-path :resume [system com-path]
+  (update-value-in system com-path resume-com))
 
-(defn- resume-or-init-com [system com-path]
+(defn- resume-or-init-path [system com-path]
   (-> system
-      (resume-com com-path)
-      (init-com com-path)))
+      (resume-path com-path)
+      (init-path com-path)))
 
 
 ;;; LIFE CYCLE ACTIONS
@@ -528,7 +528,7 @@ If this condition is not satisfied action is not performed (silently)."}
 
 (defmulti init
   "Turn config into a system map.
-  Keys are traversed in dependency order and initiated via the init-node."
+  Keys are traversed in dependency order and initiated via the init-com."
   {:arglists '([config] [config paths])}
   system-dispatch-fn)
 
@@ -538,17 +538,17 @@ If this condition is not satisfied action is not performed (silently)."}
          graph  (dependency-graph config)
          system (vary-meta config assoc ::graph graph)
          deps   (dependencies system paths)]
-     (run-action system deps init-com))))
+     (run-path-action system deps init-path))))
 
 (defmulti halt
-  "Halt a system map by applying `halt-node' in reverse dependency order."
+  "Halt a system map by applying `halt-com' in reverse dependency order."
   {:arglists '([system] [system paths])}
   system-dispatch-fn)
 
 (defmethod halt :default
   [system & [paths]]
   (let [deps (dependents system paths)]
-    (run-action system deps halt-com)))
+    (run-path-action system deps halt-path)))
 
 (defmulti resume 
   "Resume components from preceding suspend.
@@ -560,7 +560,7 @@ If this condition is not satisfied action is not performed (silently)."}
 (defmethod resume :default
   [system & [paths]]
   (let [deps (dependencies system paths)]
-    (run-action system deps resume-com)))
+    (run-path-action system deps resume-path)))
 
 (defmulti resume-or-init
   "Resume components from preceding suspend.
@@ -572,7 +572,7 @@ If this condition is not satisfied action is not performed (silently)."}
 (defmethod resume-or-init :default
   [system & [paths]]
   (let [deps (dependencies system paths)]
-    (run-action system deps resume-or-init-com)))
+    (run-path-action system deps resume-or-init-path)))
 
 (defmulti suspend 
   "Resume components from preceding suspend.
@@ -583,5 +583,5 @@ If this condition is not satisfied action is not performed (silently)."}
 (defmethod suspend :default
   [system & [paths]]
   (let [deps (dependents system paths)]
-    (run-action system deps suspend-com)))
+    (run-path-action system deps suspend-path)))
 

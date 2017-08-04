@@ -8,18 +8,18 @@
 (defn simplify-keys [config]
   (walk/postwalk #(if (#'cx/namespaced-keyword? %) (keyword (name %)) %) config))
 
-(defmethod cx/init-node :default [{:keys [:cx/value] :as node}]
+(defmethod cx/init-com :default [{:keys [:cx/value] :as node}]
   (let [n node
         v value]
    [:on]))
 
-(defmethod cx/halt-node :default [_]
+(defmethod cx/halt-com :default [_]
   [:stopped])
 
-(defmethod cx/resume-node :default [_]
+(defmethod cx/resume-com :default [_]
   [:resumed])
 
-(defmethod cx/suspend-node :default [_]
+(defmethod cx/suspend-com :default [_]
   [:suspended])
 
 (defn throw-ex-handler [system ex]
@@ -413,7 +413,7 @@
                 :d (cx/com {:k [(cx/ref [:a :b])
                                 (cx/ref [:a :c])]
                             :l (cx/ref :a)})}]
-    (defmethod cx/init-node :tt/z [node]
+    (defmethod cx/init-com :tt/z [node]
       (vals (:cx/value node)))
 
     (is (= (-> config
@@ -505,7 +505,7 @@
 
 (deftest value-path-status-node-test
 
-  (defmethod cx/init-node :default [{:keys [:cx/path :cx/status :cx/value] :as node}]
+  (defmethod cx/init-com :default [{:keys [:cx/path :cx/status :cx/value] :as node}]
     [{:path path :status status :value value}])
 
   (let [conf {:z (cx/com ::root
@@ -539,107 +539,4 @@
              :cx/status :init,
              :cx/value [{:path [:z], :status nil, :value nil}]}}))))
 
-(comment
 
-  ;; 1) Define components:
-
-  (require '[commix.core :as cx])
-
-  (defmethod cx/init-node :timer/periodically [k {:keys [timeout action]}]
-    (let [now   #(quot (System/currentTimeMillis) 1000)
-          start (now)]
-      (future (while true
-                (Thread/sleep timeout)
-                (action k (- (now) start))))))
-
-  (defmethod cx/halt-node :timer/periodically [k v]
-    (future-cancel v))
-
-  ;; 2) Define and run your system
-
-  (def reporter-config
-    {
-     :timeout 1000
-     :action  (fn [k e] (println "Elapsed:" e))
-     ,,,
-     })
-  
-  (def config
-    {
-     :printer (fn [k e] (println (format "Com %s elapsed %ss" k e)))
-
-     :reporter (cx/com
-                 :timer/periodically        ; <- inherit behavior from this key
-                 reporter-config            ; <- resolve default config from this symbol
-                 {
-                  :timeout 5000              ; <- override config with this map
-                  :action  (cx/ref :printer) ; <- reference parameter or component 
-                  })
-     })
-  
-  (def system (cx/init config))
-  (def halted-system (cx/halt system))
-  (.beep (java.awt.Toolkit/getDefaultToolkit))
-
-  (cx/load-namespaces config)
-
-  (def conf {:a (cx/com :tt/a {})
-             :b (cx/com :tt/b
-                  {:c (cx/com :tt/d
-                        {:d (cx/ref :a)})})})
-
-  (cx/init conf)
-
-
-  ;; in duct.router ns
-  (def ataraxy
-    (cx/com :duct.router/ataraxy
-      :project-ns (cx/ref :duct.core/project-ns)
-      :routes nil
-      :handlers nil))
-
-  (defmethod cx/init-node [c _]
-    (do-what-duct.module/ataraxy-does-with c))
-
-
-  ;; on user side
-  {:duct.core/project-ns foo
-   :ataraxy              (cx/com duct.router/ataraxy)}
-
-
-
-  ;; ON MODULE SIDE
-  
-  (def cascading (cx/com ::cascading {:routes []}))
-
-  (def base-config (cx/com ::base-config
-                     {:bad-request      (plaintext-response "Bad Request"),
-                      :static-not-found (plaintext-response "Not Found"),
-                      ,,,}))
-
-  (def api-config (cx/com ::api-config
-                    {:bad-request      {:body ^:displace {:error :bad-request}}
-                     :static-not-found {:body ^:displace {:error :not-found}}
-                     ,,,}))
-
-  (def web (cx/com ::web
-             {:router (cx/com ::cascading
-                        {:routes (cx/ref :duct/routes)})
-              :site   (cx/com ::base-config)}))
-
-
-  
-  ;; ON THE USER SIDE
-
-  {:duct/routes [,,,]
-   :web         (cx/com duct.web/web
-                  {:site (cx/com :duct.web/api-config)}) ; <- overwrite site component
-   }
-
-  ;; or
-
-  {:web         (cx/com duct.web/web
-                  {:router {:routes [,,,]} }) ; <- overwrite only routes within cascading router
-   }
-  
-)

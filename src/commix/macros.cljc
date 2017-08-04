@@ -1,6 +1,6 @@
 (ns commix.macros)
 
-(defmacro defaction [name action-class [system-arg com-path-arg] & body]
+(defmacro def-path-action [name action-class [system-arg com-path-arg] & body]
   {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)]}
   `(defn- ~name [~system-arg ~com-path-arg]
      (let [action-class# ~action-class
