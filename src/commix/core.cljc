@@ -62,20 +62,20 @@ If this condition is not satisfied action is not performed (silently)."}
     (into #{} (map #(if (vector? %) % [%]) paths))))
 
 (defn- flatten
-  "Transform a nested config into a map of [keyseq comp].
-  `comp' is a config map or a Comp record."
+  "Transform a nested CONFIG into a map of elements of the form [KEYSEQ COMP]."
   ([v]
    (reduce-kv flatten {} v))
   ([fmap k v]
    (let [k    (if (vector? k) k [k])
          fmap (assoc fmap k v)
          v    (if (com? v) (com-conf v) v)]
-     (if-not (map? v)
-       fmap
+     (if (associative? v)
        (reduce-kv (fn [fmap k1 v1]
                     (flatten fmap (conj (vec k) k1) v1))
                   fmap
-                  v)))))
+                  v)
+       fmap))))
+
 (defn com-paths
   "Return paths to all components in the system map."
   [system]
@@ -198,16 +198,15 @@ If this condition is not satisfied action is not performed (silently)."}
   (let [v (get-in config path true)]
     (if (com? v)
       #{path}
-      (cond
-        (map? v) (reduce-kv (fn [c k v]
-                              (if (and (keyword? k) (namespace k))
-                                ;; FIXME: this one is most likely wrong
-                                (conj c (conj path k))
-                                (into c (get-coms-in-path config (conj path k)))))
-                            #{}
-                            v)
-        ;; (coll? v) (set (mapcat #(get-coms-in-path config %) v))
-        :else    #{}))))
+      (if (associative? v)
+        (reduce-kv (fn [c k v]
+                     (if (and (keyword? k) (namespace k))
+                       ;; FIXME: this one is most likely wrong
+                       (conj c (conj path k))
+                       (into c (get-coms-in-path config (conj path k)))))
+                   #{}
+                   v)
+        #{}))))
 
 #?(:clj
    ;; Adapted from Integrant

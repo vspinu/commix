@@ -499,6 +499,34 @@
             [:z :a] #{[:z]},
             [:z :b :c] #{[:z]}}))))
 
+(deftest dependency-graph-with-vectors-test
+  (let [conf {:x [(cx/com {:a  (cx/com {})
+                           :b  {:c (cx/com {})
+                                :d (cx/com {})}
+                           ::d {}})
+                  (cx/com {:aa 1})]
+              :y (cx/com {:aaa (cx/ref [:x 0])})
+              :z (cx/com {:aaa (cx/ref [:x 1])})
+              :w (cx/com {:bbb (cx/ref :x)})}
+        dep-graph (#'cx/dependency-graph conf)]
+    (is (= (:dependencies dep-graph)
+           {[:x 0] #{[:x 0 :a] [:x 0 :b :c] [:x 0 :b :d] [:x 0 :commix.core-test/d] :commix.core/ROOT},
+            [:x 0 :a] #{:commix.core/ROOT},
+            [:x 0 :b :c] #{:commix.core/ROOT},
+            [:x 0 :b :d] #{:commix.core/ROOT},
+            [:x 0 :commix.core-test/d] #{:commix.core/ROOT},
+            [:x 1] #{:commix.core/ROOT},
+            [:y] #{[:x 0] :commix.core/ROOT},
+            [:z] #{[:x 1] :commix.core/ROOT},
+            [:w] #{[:x 0] [:x 1] :commix.core/ROOT}}))
+    (is (= (:dependents dep-graph)
+           {:commix.core/ROOT #{[:x 0 :commix.core-test/d] [:y] [:x 0 :b :c] [:z] [:w] [:x 0 :b :d] [:x 0] [:x 1] [:x 0 :a]},
+            [:x 0] #{[:y] [:w]},
+            [:x 1] #{[:z] [:w]},
+            [:x 0 :b :d] #{[:x 0]},
+            [:x 0 :commix.core-test/d] #{[:x 0]},
+            [:x 0 :a] #{[:x 0]},
+            [:x 0 :b :c] #{[:x 0]}}))))
 
 
 ;;; Following Tests Overwrite :default Methods!!
