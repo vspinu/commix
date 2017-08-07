@@ -172,7 +172,7 @@ There are 2 ways to declare components:
    :C (cx/com :ns/key config {:param 1})
 
    ;; :cx/identity prototype which returns itself on initialization
-   :D1 (cx/com {:param 1}) ; equivalent to
+   :D1 (cx/com {:param 1}) ; is equivalent to
    :D2 (cx/com :cx/identity {:param 1})
    }
   ```
@@ -182,12 +182,13 @@ There are 2 ways to declare components:
   ```clojure
   {
    ;; A namespaced parameter followed by a map is considered a component.
-   ::D1 {:param 1} ; equivalent to
+   ::D1 {:param 1}
+   ;; is equivalent to
    ::D1 (cx/com ::D1 {:param 1})
    }
   ```
 
-Note that the above configurations are valid [edn][]. Commix expand `cx/com`
+Note that the above configurations are valid [edn][]. Commix expands `cx/com`
 markers in quoted lists as if `cx/com` was called directly. Symbols in the
 second argument to `cx/com` are resolved to their value. The following
 statements are equivalent:
@@ -253,9 +254,9 @@ References abide by following rules:
 Intuitively, open parenthesis in `(cx/com ,,,` is like a door - a ref can get
 out and in of its own doors, but cannot enter neighbors' doors.
 
-The above `cx/ref` semantics allows for nesting of subsystems. References in
-nested configs will be resolved in exactly the same way as they are in
-stand-alone configs. The following would be a valid config:
+The above `cx/ref` semantics allows for nested subsystems. References in nested
+configs will be resolved in exactly the same way as they are in top-level
+configs. The following is a valid config:
 
 ```clojure
 (def nested-config
