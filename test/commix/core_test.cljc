@@ -57,8 +57,8 @@
     (is (= (#'cx/deps-from-ref conf [:x :z] [:x :w :v])
            #{}))))
 
-(deftest expand-coms-test
-  (is (= (cx/expand-config
+(deftest expand-com-seqs-test
+  (is (= (cx/expand-com-seqs
            {:a (cx/com ::abc {})
             :b (cx/com {})
             :c {:cx/key ::abc}
@@ -447,19 +447,19 @@
            (cx/init {:A '(cx/com :ns/name {:param 1})}))))
   #?(:clj
      (is (=
-           (cx/expand-config {:A (cx/com :ns/name {:param 1})})
-           (cx/expand-config `{:A (cx/com :ns/name {:param 1})})
-           (cx/expand-config {:A '(cx/com :ns/name {:param 1})})
-           (cx/expand-config `{:A (cx/com :ns/name com-config)})
-           (cx/expand-config {:A `(cx/com :ns/name com-config)})
-           (cx/expand-config {:A (cx/com :ns/name `com-config)})
-           #?(:clj (cx/expand-config (read-string "{:A (cx/com :ns/name {:param 1})}")))
+           (cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
+           (cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
+           (cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})
+           (cx/expand-com-seqs `{:A (cx/com :ns/name com-config)})
+           (cx/expand-com-seqs {:A `(cx/com :ns/name com-config)})
+           (cx/expand-com-seqs {:A (cx/com :ns/name `com-config)})
+           #?(:clj (cx/expand-com-seqs (read-string "{:A (cx/com :ns/name {:param 1})}")))
            ))
      :cljs
      (is (=
-           (cx/expand-config {:A (cx/com :ns/name {:param 1})})
-           (cx/expand-config `{:A (cx/com :ns/name {:param 1})})
-           (cx/expand-config {:A '(cx/com :ns/name {:param 1})})))))
+           (cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
+           (cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
+           (cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})))))
 
 (deftest modules-test
 

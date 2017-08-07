@@ -1,4 +1,5 @@
-(ns commix.macros)
+(ns commix.macros
+  (:refer-clojure :exclude [eval apply]))
 
 (defmacro def-path-action [name action-class [system-arg com-path-arg] & body]
   {:pre [(keyword? action-class) (symbol? system-arg) (symbol? com-path-arg)]}
@@ -16,3 +17,14 @@
                                    (throw (#'commix.core/action-exception system-arg# com-path-arg# action-class# ex#))))]
              (assoc-in system-arg# (conj com-path-arg# :cx/status) action-class#)))
          system-arg#))))
+
+
+(defmacro eval
+  "Create an form which is evaluated during Commix dependency substitution."
+  [& body]
+  `(quote (cx/eval ~@body)))
+
+(defmacro apply
+  "Create a form which behaves as function application during Commix dependency substitution."
+  [f & args]
+  `(quote (cx/apply ~f ~@args)))

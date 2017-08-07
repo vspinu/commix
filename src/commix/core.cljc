@@ -1,5 +1,5 @@
 (ns commix.core
-  (:refer-clojure :exclude [ref flatten])
+  (:refer-clojure :exclude [ref flatten eval apply])
   (:require [com.stuartsierra.dependency :as dep]
             [clojure.set :as set]
             [clojure.walk :as walk]
@@ -7,7 +7,11 @@
             #?(:clj  [clojure.pprint]
                :cljs [cljs.pprint]))
   #?(:cljs (:require-macros [commix.macros :refer [def-path-action]])
-     :clj (:require [commix.macros :refer [def-path-action]])))
+     :clj (:require [commix.macros
+                     :refer [def-path-action eval apply]
+                     :rename {eval eval-macro
+                              apply apply-macro
+                              def-path-action def-path-action-macro}])))
 
 (defn default-exception-handler [system ex]
   #?(:clj  (clojure.pprint/pprint ex)
@@ -174,7 +178,7 @@ If this condition is not satisfied action is not performed (silently)."}
       (dissoc x :cx/key :cx/value :cx/status :cx/path :cx/system)
       (throw (ex-info "Invalid com." {:object x})))))
 
-(defn expand-config [config]
+(defn expand-com-seqs [config]
   (let [expand-kwds (not (-> config meta ::graph)) ; expand only on init
         expand-v    (fn [[k v]]
                       (if (and expand-kwds
@@ -228,7 +232,7 @@ If this condition is not satisfied action is not performed (silently)."}
      function will attempt to load the namespaces foo.bar and foo.bar.baz. Upon
      completion, a list of all loaded namespaces will be returned."
        [config]
-       (let [config (expand-config config)
+       (let [config (expand-com-seqs config)
              keys   (volatile! [])]
          (walk/postwalk (fn [v]
                           (if (com-map? v)
@@ -249,7 +253,7 @@ If this condition is not satisfied action is not performed (silently)."}
   `(cx/ref ~key))
 
 (defn ref?
-  "Return true if its argument is a ref."
+  "Return true if X is a `ref'."
   [x]
   (and (seq? x)
        (contains? #{'cx/ref 'commix.core/ref} (first x))))
@@ -286,11 +290,39 @@ If this condition is not satisfied action is not performed (silently)."}
 ;;                              :b  {:c (com {})
 ;;                                   :d (com {})}
 ;;                              ::d {}})}))
+
+
+;;; EVAL
+
+(def ^:dynamic *allow-eval?*
+  "True if evaluation of `cx/eval' forms is allowed."
+  true)
+
+#?(:clj
+   (defmacro ^{:doc (:doc (meta #'eval-macro))} eval [& body]
+     `(eval-macro ~@body)))
+
+#?(:clj
+   (defmacro ^{:doc (:doc (meta #'apply-macro))} apply [f & args]
+     `(apply-macro ~f ~@args)))
+
+(defn eval-form?
+  "Return true if X is a `cx/eval' form."
+  [x]
+  (and (seq? x)
+       (contains? #{'cx/eval 'commix.core/eval 'commix.macros/eval} (first x))))
+
+(defn apply-form?
+  "Return true if X is a `cx/eval' form."
+  [x]
+  (and (seq? x)
+       (contains? #{'cx/apply 'commix.core/apply 'commix.macros/apply} (first x))))
+
 
 ;;; DEPS
 
 (defn- dep-path-of-a-ref
-  "Get full dependency path of a ref."
+  "Get full dependency path of a ref or nil if no dependency could be found."
   [config com-path ref-path]
   {:pre [(vector? ref-path)]}
   (loop [cp com-path]
@@ -301,8 +333,8 @@ If this condition is not satisfied action is not performed (silently)."}
           (recur (butlast cp)))))))
 
 (defn- deps-from-ref
-  "Get a set of full paths to dpendencies of ref key ref-path in flat map fconfig.
-  com-path is the component path where ref-path was found."
+  "Get a set of full paths to dpendencies of ref key REF-PATH in CONFIG.
+  COM-PATH is the component path where REF-PATH was found."
   [config com-path ref-path]
   (when-let [dp (dep-path-of-a-ref config com-path ref-path)]
     (get-coms-in-path config dp)))
@@ -310,7 +342,7 @@ If this condition is not satisfied action is not performed (silently)."}
 (defn- dependency-graph
   "Dependency graph from config."
   [config]
-  (let [config (expand-config config)
+  (let [config (expand-com-seqs config)
         refs   (all-refs (flatten config))]
     (reduce-kv (fn [g k v]
                  (if-not (com? (get-in config k))
@@ -411,6 +443,12 @@ If this condition is not satisfied action is not performed (silently)."}
 
 ;;; ACTIONS
 
+#?(:clj
+   (defmacro ^{:doc (:doc (meta #'def-path-action-macro))
+               :arglists (:arglists (meta #'def-path-action-macro))}
+     def-path-action [& args]
+     `(def-path-action-macro ~@args)))
+
 (defn can-run? [system com-path action]
   (let [status (:cx/status (get-in system com-path))
         run?   (contains? (get @can-run-on-status action) status)]
@@ -477,26 +515,28 @@ If this condition is not satisfied action is not performed (silently)."}
   (walk/prewalk #(if (com? %) (:cx/value %) %)
                 (get-in system path)))
 
-;; (defn- fill-obj-with-config [system com-path]
-;;   (update-in system com-path #(assoc % :cx/value (com-conf %))))
-
-(defn- get-filled-config-with-deps [system com-path]
+(defn- filled-com
+  "Fill com at COM-PATH with its dependencies and eval all cx/eval and cx/apply forms."
+  [system com-path]
   (let [filler #(walk/postwalk
                   (fn [v]
                     (if (ref? v)
                       (let [dp (dep-path-of-a-ref system com-path (ref-key v))]
                         (make-value system dp))
-                      v))
+                      (if (eval-form? v)
+                        (if *allow-eval?*
+                          (clojure.core/eval (cons 'do (pop v)))
+                          (throw (ex-info "Evaluation of `cx/eval' forms is disallowed." {:form v})))
+                        (if (apply-form? v)
+                          (if *allow-eval?*
+                            (clojure.core/apply (second v) (pop (pop v)))
+                            (throw (ex-info "Evaluation of `cx/apply' forms is disallowed." {:form v})))
+                          v))))
                   %)]
-    (let [val-path (conj com-path :cx/value)
-          ;; system   (if (get-in system val-path)
-          ;;            system
-          ;;            (fill-obj-with-config system com-path))
-          ]
-      (filler (get-in system com-path)))))
+    (filler (get-in system com-path))))
 
 (defn- update-value-in [system com-path f]
-  (let [node      (get-filled-config-with-deps system com-path)
+  (let [node      (filled-com system com-path)
         new-value (f (assoc node
                             :cx/system system
                             :cx/path com-path))]
@@ -533,7 +573,7 @@ If this condition is not satisfied action is not performed (silently)."}
 
 (defmethod init :default
   ([config & [paths]]
-   (let [config (expand-config config)
+   (let [config (expand-com-seqs config)
          graph  (dependency-graph config)
          system (vary-meta config assoc ::graph graph)
          deps   (dependencies system paths)]
