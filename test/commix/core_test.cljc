@@ -22,10 +22,6 @@
 (defmethod cx/suspend-com :default [_]
   [:suspended])
 
-(defn throw-ex-handler [system ex]
-  (throw ex))
-
-(reset! cx/*exception-handler* throw-ex-handler)
 (reset! cx/*trace-function* nil)
 
 (deftest get-refs-test

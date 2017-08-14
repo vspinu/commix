@@ -18,6 +18,8 @@
              (assoc-in system-arg# (conj com-path-arg# :cx/status) action-class#)))
          system-arg#))))
 
+;; cljs dummy
+(defmacro spec-assert [spec x] `~x)
 
 (defmacro eval
   "Create an form which is evaluated during Commix dependency substitution."
@@ -28,3 +30,4 @@
   "Create a form which behaves as function application during Commix dependency substitution."
   [f & args]
   `(quote (cx/apply ~f ~@args)))
+

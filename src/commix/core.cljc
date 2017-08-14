@@ -6,7 +6,7 @@
             [clojure.string :as str]
             #?(:clj  [clojure.pprint]
                :cljs [cljs.pprint]))
-  #?(:cljs (:require-macros [commix.macros :refer [def-path-action]])
+  #?(:cljs (:require-macros [commix.macros :refer [def-path-action eval apply spec-assert]])
      :clj (:require [commix.macros
                      :refer [def-path-action eval apply]
                      :rename {eval eval-macro
@@ -53,14 +53,23 @@ If this condition is not satisfied action is not performed (silently)."}
 
 ;;; SPECS
 
-(def ^:private spec-available
-  #?(:clj (try
-            (require '[clojure.spec.alpha :as s]) true
-            (catch Throwable _ false))
-     :cljs false))
+(defmulti init-spec "Spec for the `init-com` input argument." :cx/type)
+(defmulti halt-spec "Spec for the `halt-com` input argument." :cx/type)
+(defmulti suspend-spec "Spec for the `suspend-com` input argument." :cx/type)
+(defmulti resume-spec "Spec for the `resume-com` input argument." :cx/type)
+
+(defmulti init-value-spec "Spec for the return value of `init-com`." :cx/type)
+(defmulti halt-value-spec "Spec for the return value of `halt-com`." :cx/type)
+(defmulti suspend-value-spec "Spec for the return value of `suspend-com`." :cx/type)
+(defmulti resume-value-spec "Spec for the return value of `resume-com`." :cx/type)
 
 #?(:clj
    (do
+     
+     (def ^:private spec-available?
+       (try
+         (require '[clojure.spec.alpha :as s]) true
+         (catch Throwable _ false)))
 
      (defmacro spec-assert
        "Call `clojure.spec.alpha/assert` when available.
@@ -68,51 +77,52 @@ If this condition is not satisfied action is not performed (silently)."}
   `clojure.spec.alpha/check-asserts` unconditionally to `true`. You can still
   disable asserts at copile time by altering `clojure.spec.alpha/*compile-asserts*`."
        [spec x]
-       (if spec-available
+       (if spec-available?
          `(let [old-ca# (s/check-asserts?)]
             (s/check-asserts true)
             (try
               (s/assert ~spec ~x)
               (finally (s/check-asserts old-ca#))))
          `~x))
+     
+     ;; need this macro to silence byte compiler
+     (defmacro unless-spec [& body]
+       (when-not spec-available?
+         `~body))
 
-     (defmulti init-spec "Spec for the `init-com` input argument." :cx/type)
-     (defmulti halt-spec "Spec for the `halt-com` input argument." :cx/type)
-     (defmulti suspend-spec "Spec for the `suspend-com` input argument." :cx/type)
-     (defmulti resume-spec "Spec for the `resume-com` input argument." :cx/type)
+     (unless-spec
+       (let [dummy-s (create-ns 's)
+             ignore (fn [& _])]
+         (intern dummy-s 'def ignore)
+         (intern dummy-s 'spec ignore)
+         (intern dummy-s 'keys ignore)
+         (intern dummy-s 'multi-spec ignore)
+         (intern dummy-s 'assert ignore))
+       (defn- any? [x] true))
 
-     (defmulti init-value-spec "Spec for the return value of `init-com`." :cx/type)
-     (defmulti halt-value-spec "Spec for the return value of `halt-com`." :cx/type)
-     (defmulti suspend-value-spec "Spec for the return value of `suspend-com`." :cx/type)
-     (defmulti resume-value-spec "Spec for the return value of `resume-com`." :cx/type)
+     (def ^:private -keys-spec (s/keys))
+     (defmethod init-spec :default [_] -keys-spec)
+     (defmethod halt-spec :default [_] -keys-spec)
+     (defmethod suspend-spec :default [_] -keys-spec)
+     (defmethod resume-spec :default [_] -keys-spec)
 
-     (when spec-available
+     (def ^:private -any-spec (s/spec any?))
+     (defmethod init-value-spec :default [_] -any-spec)
+     (defmethod halt-value-spec :default [_] -any-spec)
+     (defmethod suspend-value-spec :default [_] -any-spec)
+     (defmethod resume-value-spec :default [_] -any-spec)
 
-       (def ^:private -keys-spec (s/keys))
+     (s/def :cx/init-com (s/multi-spec init-spec :cx/type))
+     (s/def :cx/halt-com (s/multi-spec halt-spec :cx/type))
+     (s/def :cx/suspend-com (s/multi-spec suspend-spec :cx/type))
+     (s/def :cx/resume-com (s/multi-spec resume-spec :cx/type))
 
-       (defmethod init-spec :default [_] -keys-spec)
-       (defmethod halt-spec :default [_] -keys-spec)
-       (defmethod suspend-spec :default [_] -keys-spec)
-       (defmethod resume-spec :default [_] -keys-spec)
+     (s/def :cx/init-value (s/multi-spec init-value-spec :cx/type))
+     (s/def :cx/halt-value (s/multi-spec halt-value-spec :cx/type))
+     (s/def :cx/suspend-value (s/multi-spec suspend-value-spec :cx/type))
+     (s/def :cx/resume-value (s/multi-spec resume-value-spec :cx/type))
 
-       (def ^:private -any-spec (s/spec any?))
-
-       (defmethod init-value-spec :default [_] -any-spec)
-       (defmethod halt-value-spec :default [_] -any-spec)
-       (defmethod suspend-value-spec :default [_] -any-spec)
-       (defmethod resume-value-spec :default [_] -any-spec)
-
-       (s/def :cx/init-com (s/multi-spec init-spec :cx/type))
-       (s/def :cx/halt-com (s/multi-spec halt-spec :cx/type))
-       (s/def :cx/suspend-com (s/multi-spec suspend-spec :cx/type))
-       (s/def :cx/resume-com (s/multi-spec resume-spec :cx/type))
-
-       (s/def :cx/init-value (s/multi-spec init-value-spec :cx/type))
-       (s/def :cx/halt-value (s/multi-spec halt-value-spec :cx/type))
-       (s/def :cx/suspend-value (s/multi-spec suspend-value-spec :cx/type))
-       (s/def :cx/resume-value (s/multi-spec resume-value-spec :cx/type))
-
-       )))
+     ))
 
 
 ;;; UTILS
@@ -198,7 +208,7 @@ If this condition is not satisfied action is not performed (silently)."}
 
 (defn- expand-deps [x]
   (if (deps-seq? x)
-    (apply deps (rest x))
+    (clojure.core/apply deps (rest x))
     x))
 
 (defn com
@@ -368,8 +378,9 @@ If this condition is not satisfied action is not performed (silently)."}
 
 ;;; EVAL
 
+;; Not exposed; not documented. Might be removed in the future.
 (def ^:dynamic *allow-eval?*
-  "True if evaluation of `cx/eval' forms is allowed."
+  ;; "True if evaluation of `cx/eval' forms is allowed."
   true)
 
 #?(:clj
@@ -381,13 +392,13 @@ If this condition is not satisfied action is not performed (silently)."}
      `(apply-macro ~f ~@args)))
 
 (defn eval-form?
-  "Return true if X is a `cx/eval' form."
+  ;; "Return true if X is a `cx/eval' form."
   [x]
   (and (seq? x)
        (contains? #{'cx/eval 'commix.core/eval 'commix.macros/eval} (first x))))
 
 (defn apply-form?
-  "Return true if X is a `cx/eval' form."
+  ;; "Return true if X is a `cx/eval' form."
   [x]
   (and (seq? x)
        (contains? #{'cx/apply 'commix.core/apply 'commix.macros/apply} (first x))))
@@ -598,7 +609,8 @@ If this condition is not satisfied action is not performed (silently)."}
                         (make-value system dp))
                       (if (eval-form? v)
                         (if *allow-eval?*
-                          (clojure.core/eval (cons 'do (pop v)))
+                          #?(:clj (clojure.core/eval (cons 'do (pop v)))
+                             :cljs (throw (ex-info "No eval in ClojureScript ." {:form v})))
                           (throw (ex-info "Evaluation of `cx/eval' forms is disallowed." {:form v})))
                         (if (apply-form? v)
                           (if *allow-eval?*

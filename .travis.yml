@@ -1,3 +1,11 @@
 language: clojure
 lein: 2.7.1
-script: lein test-all
+sudo: false
+cache:
+  directories:
+    - $HOME/.m2
+script:
+  - $TEST_CMD
+env:
+  - TEST_CMD="lein with-profile 1.7 test-all"
+  - TEST_CMD="lein with-profile 1.9 do test, test-node"
