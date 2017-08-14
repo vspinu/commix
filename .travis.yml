@@ -5,7 +5,11 @@ cache:
   directories:
     - $HOME/.m2
 script:
-  - $TEST_CMD
+  - $CMD
 env:
-  - TEST_CMD="lein with-profile 1.7 test-all"
-  - TEST_CMD="lein with-profile 1.9 do test, test-node"
+  - CMD="lein with-profile 1.7 test-all"
+  - CMD="lein with-profile 1.9 do test, test-node"
+  - CMD="lein with-profile 1.9-no-spec do test, test-node"
+jdk:
+  - openjdk7
+  - oraclejdk8
