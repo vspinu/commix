@@ -53,10 +53,6 @@ matrix. For example, actions like `init` and `halt` will never run twice in a
 row on the same component and will fail after actions which they were not
 designed to follow. Custom life-cycle actions are very easy to write.
 
-Commix doesn't lose references. Errors during life-cycle phases are caught and
-passed to the exception handler. A valid system is always returned to the caller
-for further manipulation or `halt`.
-
 [edn]: https://github.com/edn-format/edn
 
 ## Installation
@@ -309,6 +305,7 @@ its use is discouraged. The core idea of a "component" is that it can exist in
 isolation and it is very likely that you can achieve the same effect only by an
 explicit use of dependencies.
 
+
 ### Life-cycle Actions: `init`, `halt` etc.
 
 All life-cycle actions (`init`, `halt`, `suspend` and `resume`) take in a system
@@ -432,26 +429,12 @@ but the following will
 
 #### Handling Errors
 
-By default Commix never throws. It always returns a valid system map for further
-inspection or halt. Exception handling is done with `cx/*exception-handler*`
-which by default pretty prints the exeption to stdout.
-
-If you want to throw, just change the handler:
+Commix doesn't lose systems on errors. The most recent valid system state is
+stored in `cx/*system*` atom. Use it to `halt` or inspect the troubled system.
 
 
 ```clojure
-(reset! #'cx/*exception-handler* (fn [_ ex] (throw ex)))
-```
-
-or
-
-```clojure
-(def shadow-system (atom nil))
-
-(reset! #'cx/*exception-handler*
-        (fn [system ex]
-          (reset! shadow-system system)
-          (throw ex)))
+(halt @cx/*system*)
 ```
 
 #### Extending Actions
@@ -476,6 +459,13 @@ preserve the topology and dependency graph of the system. An action can modify
 the topology, but it should be rarely needed. If it does, it should also update
 `:commix.core/graph` metadata of the system.
 
+### Validation Methods (`clojure.spec` integration)
+
+TODO:
+
+### Sugar
+
+TODO:
 
 ### Reading From EDN Resources
 

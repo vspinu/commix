@@ -13,13 +13,11 @@
                               apply apply-macro
                               def-path-action def-path-action-macro}])))
 
-(defn default-exception-handler [system ex]
-  #?(:clj  (clojure.pprint/pprint ex)
-     :cljs (cljs.pprint/pprint ex))
-  system)
 
-(def ^:dynamic *exception-handler*
-  (atom default-exception-handler))
+(def ^:dynamic *system*
+  "Atom storing last value of the system.
+  Use it to retrieve on errors."
+  (atom nil))
 
 (def ^:dynamic *trace-function*
   (atom nil))
@@ -561,26 +559,23 @@ If this condition is not satisfied action is not performed (silently)."}
            ex))
 
 (defn run-path-action [system paths action]
-  (let [exception  (atom nil)]
-    (loop [completed      ()
-           [path & paths] paths
-           system         system]
-      (if-not path
-        system
-        (let [system
-              (try
-                (action system path)
-                (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) ex
-                    (reset! exception ex)
-                  system)
-                (catch #?(:clj Throwable :cljs :default) ex
-                    (reset! exception (action-exception system path :unknown ex))
-                  system)
-                )]
-          (if @exception
-            (when @*exception-handler*
-             (@*exception-handler* system @exception))
-            (recur (cons path completed) paths system)))))))
+  (loop [completed      ()
+         [path & paths] paths
+         system         system]
+    (if-not path
+      system
+      (let [system
+            (try
+              (action system path)
+              (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) ex
+                (reset! *system* system)
+                (throw ex))
+              (catch #?(:clj Throwable :cljs :default) ex
+                (reset! *system* system)
+                (throw (action-exception system path :unknown ex)))
+              (finally
+                (reset! *system* system)))]
+        (recur (cons path completed) paths system)))))
 
 ;; fixme: document or think of a more intuitive name
 (defn- make-value [system path]
