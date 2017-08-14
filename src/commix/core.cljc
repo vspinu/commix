@@ -51,6 +51,65 @@ If this condition is not satisfied action is not performed (silently)."}
          :resume  #{:suspend}
          :suspend #{:init :resume}}))
 
+
+
+;;; SPECS
+
+(def ^:private spec-available
+  #?(:clj (try
+            (require '[clojure.spec.alpha :as s]) true
+            (catch Throwable _ false))
+     :cljs false))
+
+#?(:clj
+   (do
+
+     (defmacro spec-assert
+       "Call `clojure.spec.alpha/assert` when available.
+  Because speed is never a concern with life-cycle methods, set
+  `clojure.spec.alpha/check-asserts` unconditionally to `true`. You can still
+  disable asserts at copile time by altering `clojure.spec.alpha/*compile-asserts*`."
+       [spec x]
+       (if spec-available
+         `(let [old-ca# (s/check-asserts?)]
+            (s/check-asserts true)
+            (try
+              (s/assert ~spec ~x)
+              (finally (s/check-asserts old-ca#))))
+         `~x))
+
+     (defmulti init-spec
+       "Spec for the `init-com` input parameter."
+       :cx/type)
+
+     (defmulti halt-spec
+       "Spec for the `halt-com` input parameter."
+       :cx/type)
+
+     (defmulti suspend-spec
+       "Spec for the `suspend-com` input parameter."
+       :cx/type)
+
+     (defmulti resume-spec
+       "Spec for the `resume-com` input parameter."
+       :cx/type)
+
+     (when spec-available
+
+       (defmethod init-spec :default [_] (s/keys))
+       (s/def :cx/init-com (s/multi-spec init-spec :cx/type))
+
+       (defmethod halt-spec :default [_] (s/keys))
+       (s/def :cx/halt-com (s/multi-spec halt-spec :cx/type))
+
+       (defmethod suspend-spec :default [_] (s/keys))
+       (s/def :cx/suspend-com (s/multi-spec suspend-spec :cx/type))
+
+       (defmethod resume-spec :default [_] (s/keys))
+       (s/def :cx/resume-com (s/multi-spec resume-spec :cx/type))
+
+       )))
+
 
 ;;; UTILS
 
