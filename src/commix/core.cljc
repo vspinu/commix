@@ -65,11 +65,17 @@ If this condition is not satisfied action is not performed (silently)."}
 
 #?(:clj
    (do
-     
+
      (def ^:private spec-available?
        (try
          (require '[clojure.spec.alpha :as s]) true
          (catch Throwable _ false)))
+
+     (defmacro when-spec
+       {:style/indent 0}
+       [& body]
+       (when spec-available?
+         `(do ~@body)))
 
      (defmacro spec-assert
        "Call `clojure.spec.alpha/assert` when available.
@@ -84,43 +90,29 @@ If this condition is not satisfied action is not performed (silently)."}
               (s/assert ~spec ~x)
               (finally (s/check-asserts old-ca#))))
          `~x))
-     
-     ;; need this macro to silence byte compiler
-     (defmacro unless-spec [& body]
-       (when-not spec-available?
-         `~body))
 
-     (unless-spec
-       (let [dummy-s (create-ns 's)
-             ignore (fn [& _])]
-         (intern dummy-s 'def ignore)
-         (intern dummy-s 'spec ignore)
-         (intern dummy-s 'keys ignore)
-         (intern dummy-s 'multi-spec ignore)
-         (intern dummy-s 'assert ignore))
-       (defn- any? [x] true))
+     (when-spec
+       (def ^:private -keys-spec (s/keys))
+       (defmethod init-spec :default [_] -keys-spec)
+       (defmethod halt-spec :default [_] -keys-spec)
+       (defmethod suspend-spec :default [_] -keys-spec)
+       (defmethod resume-spec :default [_] -keys-spec)
 
-     (def ^:private -keys-spec (s/keys))
-     (defmethod init-spec :default [_] -keys-spec)
-     (defmethod halt-spec :default [_] -keys-spec)
-     (defmethod suspend-spec :default [_] -keys-spec)
-     (defmethod resume-spec :default [_] -keys-spec)
+       (def ^:private -any-spec (s/spec any?))
+       (defmethod init-value-spec :default [_] -any-spec)
+       (defmethod halt-value-spec :default [_] -any-spec)
+       (defmethod suspend-value-spec :default [_] -any-spec)
+       (defmethod resume-value-spec :default [_] -any-spec)
 
-     (def ^:private -any-spec (s/spec any?))
-     (defmethod init-value-spec :default [_] -any-spec)
-     (defmethod halt-value-spec :default [_] -any-spec)
-     (defmethod suspend-value-spec :default [_] -any-spec)
-     (defmethod resume-value-spec :default [_] -any-spec)
+       (s/def :cx/init-com (s/multi-spec init-spec :cx/type))
+       (s/def :cx/halt-com (s/multi-spec halt-spec :cx/type))
+       (s/def :cx/suspend-com (s/multi-spec suspend-spec :cx/type))
+       (s/def :cx/resume-com (s/multi-spec resume-spec :cx/type))
 
-     (s/def :cx/init-com (s/multi-spec init-spec :cx/type))
-     (s/def :cx/halt-com (s/multi-spec halt-spec :cx/type))
-     (s/def :cx/suspend-com (s/multi-spec suspend-spec :cx/type))
-     (s/def :cx/resume-com (s/multi-spec resume-spec :cx/type))
-
-     (s/def :cx/init-value (s/multi-spec init-value-spec :cx/type))
-     (s/def :cx/halt-value (s/multi-spec halt-value-spec :cx/type))
-     (s/def :cx/suspend-value (s/multi-spec suspend-value-spec :cx/type))
-     (s/def :cx/resume-value (s/multi-spec resume-value-spec :cx/type))
+       (s/def :cx/init-value (s/multi-spec init-value-spec :cx/type))
+       (s/def :cx/halt-value (s/multi-spec halt-value-spec :cx/type))
+       (s/def :cx/suspend-value (s/multi-spec suspend-value-spec :cx/type))
+       (s/def :cx/resume-value (s/multi-spec resume-value-spec :cx/type)))
 
      ))
 
@@ -567,7 +559,9 @@ If this condition is not satisfied action is not performed (silently)."}
 
 
 (defn action-exception [system com-path action-class ex]
-  (ex-info (format "Error in %s action on component %s" action-class com-path)
+  (ex-info (format "Error in %s action on component %s (%s)"
+                   action-class com-path
+                   #?(:clj (.getMessage ex) :cljs (str ex)))
            {:reason ::action-exception
             :action action-class
             :com-path com-path
