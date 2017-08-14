@@ -465,50 +465,52 @@ If this condition is not satisfied action is not performed (silently)."}
 
 ;;; KEYED METHODS
 
-(defn- com-dispatch-fn [node]
-  (or (:cx/key node)
-      (throw (ex-info "Missing :cx/key in system node." {:config node}))))
+(defn- throw-invalid-com [com]
+  (throw (ex-info "Invalid com. Missing :cx/type key." {:com com})))
 
 (defmulti init-com
   "Turn a config value associated with a key into a concrete implementation.
   In order to avoid bugs due to typos there is no default method for
   `init-com'."
-  {:arglists '([node])}
-  com-dispatch-fn)
+  {:arglists '([com])}
+  :cx/type)
 
-(defmethod init-com :cx/identity [node]
-  ;; Not dissoccing other special keys. Otherwise would need to dissoc
-  ;; recursively for other nested :cx/identity components.
-  (dissoc node :cx/path :cx/system))
+(defmethod init-com :cx/identity [com]
+  ;; Not dissoccing other special keys. Would need to dissoc recursively for
+  ;; other nested :cx/identity components.
+  (dissoc com :cx/path :cx/system))
 
 (defmulti halt-com
-  "Halt a running or suspended node.
+  "Halt a running or suspended com.
   Often used for stopping processes or cleaning up resources. As with other key
   methods the return of `halt-com' is inserted into the system map, this could
   be used for statistics reports and inspection of the stopped
   components. Default method is an identity."
-  {:arglists '([node])}
-  com-dispatch-fn)
+  {:arglists '([com])}
+  :cx/type)
 
-(defmethod halt-com :default [node] (:cx/value node))
+(defmethod halt-com :default [com] (:cx/value com))
+(defmethod halt-com nil [com] (throw-invalid-com com))
 
 (defmulti resume-com
-  "Resume a previously suspended node.
+  "Resume a previously suspended com.
   By default calls `init-com'."
-  {:arglists '([node])}
-  com-dispatch-fn)
+  {:arglists '([com])}
+  :cx/type)
 
-(defmethod resume-com :default [node]
-  (init-com node))
+(defmethod resume-com :default [com] (init-com com))
+(defmethod resume-com nil [com] (throw-invalid-com com))
 
 (defmulti suspend-com
-  "Suspend a running node, so that it may be eventually passed to resume-com.
+  "Suspend a running com, so that it may be eventually passed to resume-com.
   By default this multimethod calls halt-com, but it may be customized to do
   things like keep a server running, but buffer incoming requests until the
-  server is resumed." {:arglists '([node])} com-dispatch-fn)
+  server is resumed."
+  {:arglists '([com])}
+  :cx/type)
 
-(defmethod suspend-com :default [node]
-  (halt-com node))
+(defmethod suspend-com :default [com] (halt-com com))
+(defmethod suspend-com nil [com] (throw-invalid-com com))
 
 
 ;;; ACTIONS
@@ -606,8 +608,8 @@ If this condition is not satisfied action is not performed (silently)."}
     (filler (get-in system com-path))))
 
 (defn- update-value-in [system com-path f]
-  (let [node      (filled-com system com-path)
-        new-value (f (assoc node
+  (let [com      (filled-com system com-path)
+        new-value (f (assoc com
                             :cx/system system
                             :cx/path com-path))]
     (assoc-in system (conj com-path :cx/value) new-value)))
@@ -633,7 +635,7 @@ If this condition is not satisfied action is not performed (silently)."}
 ;;; LIFE CYCLE ACTIONS
 
 (defn- system-dispatch-fn [system & _]
-  (:cx/system system))
+  (:cx/type system))
 
 (defmulti init
   "Turn config into a system map.
@@ -659,7 +661,7 @@ If this condition is not satisfied action is not performed (silently)."}
   (let [deps (dependents system paths)]
     (run-path-action system deps halt-path)))
 
-(defmulti resume 
+(defmulti resume
   "Resume components from preceding suspend.
   Dependencies that have been previously suspended will also be resumed,
   dependencies which were halted or never initialized will be initialized."
@@ -683,7 +685,7 @@ If this condition is not satisfied action is not performed (silently)."}
   (let [deps (dependencies system paths)]
     (run-path-action system deps resume-or-init-path)))
 
-(defmulti suspend 
+(defmulti suspend
   "Resume components from preceding suspend.
   All components that depend on this component will be also suspended."
   {:arglists '([system] [system paths])}
@@ -693,4 +695,3 @@ If this condition is not satisfied action is not performed (silently)."}
   [system & [paths]]
   (let [deps (dependents system paths)]
     (run-path-action system deps suspend-path)))
-
