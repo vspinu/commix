@@ -275,14 +275,14 @@ Commix represents components as plain maps. Each component is the original
 config map with all the `cx/refs` expanded to the initialized
 dependencies. Components also contain a range of special `:cx` keys:
 
- - `:cx/key`    - key on which life-cyle multi-methods are dispatched
+ - `:cx/type`   - component type, key on which multi-methods are dispatched
  - `:cx/value`  - value returned by the previous life-cycles method
  - `:cx/status` - action class of the last action ran on this node (`:init`, `:halt` etc.)
  - `:cx/path`   - path to the component within the system
  - `:cx/system` - whole system (use discouraged!)
 
 ```clojure
-(defmethod cx/init-com :some-ns/some-key [{:keys [param1 param2 :cx/key :cx/path] :as config}]
+(defmethod cx/init-com :some-ns/some-key [{:keys [param1 param2 :cx/type :cx/path] :as config}]
   (do
     (something with config, param1, param2, key and path)
     ,,,
@@ -456,12 +456,13 @@ or
 
 #### Extending Actions
 
-All built-in actions are multi-methods which dispatch on `:cx/system` key within
+All built-in actions are multi-methods which dispatch on `:cx/type` key within
 a system map. By defining custom methods library authors can customize life
 cycle methods.
 
 ```clojure
-{:cx/system :some.package/xyz
+;; custom system
+{:cx/type :some.package/system
  ,,,
  }
 ```
@@ -501,12 +502,12 @@ namespaces are ignored.
 ## How it works
 
 System map is the expanded config map with each node additionally containing a
-bunch of special keys - `:cx/key` (dispatch key), `:cx/status` (previous action
-class), `:cx/value` (return value of the last life-cycle method run on this
-node). Each [life-cycle action](#life-cycle-actions-init-halt-etc) runs
-its [life-cycle method](#life-cycle-methods-init-com-halt-com-etc) on system
-nodes in dependency order and substitutes `:cx/value` by the return value the
-method. That's it.
+bunch of special keys - `:cx/type` (dispatch key - component type), `:cx/status`
+(previous action class), `:cx/value` (return value of the last life-cycle method
+run on this node). Each [life-cycle action](#life-cycle-actions-init-halt-etc)
+runs its [life-cycle method](#life-cycle-methods-init-com-halt-com-etc) on
+system nodes in dependency order and substitutes `:cx/value` by the return value
+the method. That's it.
 
 ## License
 
