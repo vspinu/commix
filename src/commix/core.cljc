@@ -76,35 +76,41 @@ If this condition is not satisfied action is not performed (silently)."}
               (finally (s/check-asserts old-ca#))))
          `~x))
 
-     (defmulti init-spec
-       "Spec for the `init-com` input parameter."
-       :cx/type)
+     (defmulti init-spec "Spec for the `init-com` input argument." :cx/type)
+     (defmulti halt-spec "Spec for the `halt-com` input argument." :cx/type)
+     (defmulti suspend-spec "Spec for the `suspend-com` input argument." :cx/type)
+     (defmulti resume-spec "Spec for the `resume-com` input argument." :cx/type)
 
-     (defmulti halt-spec
-       "Spec for the `halt-com` input parameter."
-       :cx/type)
-
-     (defmulti suspend-spec
-       "Spec for the `suspend-com` input parameter."
-       :cx/type)
-
-     (defmulti resume-spec
-       "Spec for the `resume-com` input parameter."
-       :cx/type)
+     (defmulti init-value-spec "Spec for the return value of `init-com`." :cx/type)
+     (defmulti halt-value-spec "Spec for the return value of `halt-com`." :cx/type)
+     (defmulti suspend-value-spec "Spec for the return value of `suspend-com`." :cx/type)
+     (defmulti resume-value-spec "Spec for the return value of `resume-com`." :cx/type)
 
      (when spec-available
 
-       (defmethod init-spec :default [_] (s/keys))
+       (def ^:private -keys-spec (s/keys))
+
+       (defmethod init-spec :default [_] -keys-spec)
+       (defmethod halt-spec :default [_] -keys-spec)
+       (defmethod suspend-spec :default [_] -keys-spec)
+       (defmethod resume-spec :default [_] -keys-spec)
+
+       (def ^:private -any-spec (s/spec any?))
+
+       (defmethod init-value-spec :default [_] -any-spec)
+       (defmethod halt-value-spec :default [_] -any-spec)
+       (defmethod suspend-value-spec :default [_] -any-spec)
+       (defmethod resume-value-spec :default [_] -any-spec)
+
        (s/def :cx/init-com (s/multi-spec init-spec :cx/type))
-
-       (defmethod halt-spec :default [_] (s/keys))
        (s/def :cx/halt-com (s/multi-spec halt-spec :cx/type))
-
-       (defmethod suspend-spec :default [_] (s/keys))
        (s/def :cx/suspend-com (s/multi-spec suspend-spec :cx/type))
-
-       (defmethod resume-spec :default [_] (s/keys))
        (s/def :cx/resume-com (s/multi-spec resume-spec :cx/type))
+
+       (s/def :cx/init-value (s/multi-spec init-value-spec :cx/type))
+       (s/def :cx/halt-value (s/multi-spec halt-value-spec :cx/type))
+       (s/def :cx/suspend-value (s/multi-spec suspend-value-spec :cx/type))
+       (s/def :cx/resume-value (s/multi-spec resume-value-spec :cx/type))
 
        )))
 
@@ -602,24 +608,28 @@ If this condition is not satisfied action is not performed (silently)."}
                   %)]
     (filler (get-in system com-path))))
 
-(defn- update-value-in [system com-path f]
-  (let [com      (filled-com system com-path)
-        new-value (f (assoc com
-                            :cx/system system
-                            :cx/path com-path))]
+
+(defn- update-value-in [system com-path update-fn spec-in-key spec-out-key]
+  (let [com       (-> (filled-com system com-path)
+                      (assoc :cx/system system
+                             :cx/path com-path))
+        new-value (->> com
+                       (spec-assert spec-in-key)
+                       (update-fn)
+                       (spec-assert spec-out-key))]
     (assoc-in system (conj com-path :cx/value) new-value)))
 
 (def-path-action init-path :init [system com-path]
-  (update-value-in system com-path init-com))
+  (update-value-in system com-path init-com :cx/init-com :cx/init-value))
 
 (def-path-action halt-path :halt [system com-path]
-  (update-value-in system com-path halt-com))
+  (update-value-in system com-path halt-com :cx/halt-com :cx/halt-value))
 
 (def-path-action suspend-path :suspend [system com-path]
-  (update-value-in system com-path suspend-com))
+  (update-value-in system com-path suspend-com :cx/suspend-com :cx/suspend-value))
 
 (def-path-action resume-path :resume [system com-path]
-  (update-value-in system com-path resume-com))
+  (update-value-in system com-path resume-com :cx/resume-com :cx/resume-value))
 
 (defn- resume-or-init-path [system com-path]
   (-> system
