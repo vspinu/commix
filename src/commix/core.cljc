@@ -163,6 +163,7 @@ If this condition is not satisfied action is not performed (silently)."}
          (into {}))))
 
 #?(:cljs
+   ;; simple format for :cljs
    (defn format [fmt & args]
      (loop [s fmt
             [a & args] args]
@@ -173,9 +174,33 @@ If this condition is not satisfied action is not performed (silently)."}
 
 ;;; COMs
 
+(defn- expand-symbol [sym]
+  (if (symbol? sym)
+    #?(:clj (var-get (resolve sym))
+       :cljs (throw (js/Error. "Cannot resolve symbols in clojurescript.")))
+    sym))
+
+(declare ref)
+(defn deps
+  "Expand `paths` into a map of the form {p (cx/ref p) ...} where `p` is a
+  system path in `paths`."
+  [& paths]
+  ;; fixme: implement {:ns1 [:a :b :c]} syntax
+  (reduce (fn [m p] (assoc m p (ref p)))
+          {} paths))
+
+(defn- deps-seq? [x]
+  (and (seq? x) (contains? #{'cx/deps 'commix.core/deps} (first x))))
+
+(defn- expand-deps [x]
+  (if (deps-seq? x)
+    (apply deps (rest x))
+    x))
+
 (defn com
   "Create a component from a key and a config map.
-  If `config' is a symbol it is automatically resolved.
+  All `configs` are merged. Each `config' can be a symbol, in which case it is
+  automatically resolved.
 
   (cx/com :ns/key {:param 1})
 
@@ -184,48 +209,33 @@ If this condition is not satisfied action is not performed (silently)."}
 
   (cx/com :ns/key config {:param 1}) ; merge {:param 1} into config
 
-  (cx/com {:param 1})              ; equivalent to
+  (cx/com {:param 1})     ; is equivalent to
   (cx/com :cx/identity {:param 1})"
-  {:style/indent :defn}
-  ([config-or-key]
-   (cond
-     (keyword? config-or-key) (com config-or-key {})
-     (map? config-or-key)     (com (get config-or-key :cx/key :cx/identity) config-or-key)
-     :else                    (throw (ex-info "Invalid config argument. Must be a map or a keyword." {:config config-or-key}))))
-  ([key config]
-   (cond
-     (symbol? key)    (do
-                        #?(:clj (com (var-get (resolve key)) config))
-                        #?(:cljs (throw (js/Error. "Cannot resolve symbols in clojurescript."))))
-     (symbol? config) (do
-                        #?(:clj (com key (if-let [var (resolve config)]
-                                             (var-get var)
-                                             (throw (ex-info "Cannot resolve config." {:symbol config})))))
-                        #?(:cljs (throw (js/Error. "Cannot resolve symbols in clojurescript."))))
-     (map? key)       (com (get key :cx/key :cx/identity) key config)
-     (keyword? key)   (into (sorted-map)
-                            (assoc config :cx/key key))
-     :else            (throw (ex-info "Invalid key object supplied." {:key key :config config}))))
-  ([key config merge-config]
-   (merge (com key config) merge-config)))
-
+  {:style/indent :defn
+   :arglists '([key & configs] [& configs])}
+  ([& configs]
+   (let [configs (->> configs
+                      (map expand-symbol)
+                      (map expand-deps))
+         [key configs] (if (keyword? (first configs))
+                         [(first configs) (rest configs)]
+                         [:cx/identity configs])]
+     (clojure.core/apply merge {:cx/type key} configs))))
 
 (defn- com-seq? [x]
   (and (seq? x) (contains? #{'cx/com 'commix.core/com} (first x))))
 
 (defn- com-map? [x]
-  (and (map? x) (contains? x :cx/key)))
+  (and (map? x) (contains? x :cx/type)))
 
 (defn com? [x]
   (or (com-seq? x) (com-map? x)))
 
 (defn- com-key [x]
   (if (com-map? x)
-    (:cx/key x)
-    (if (com? x)
-      (if (= (count x) 3)
-        (second x)
-        :cx/identity)
+    (:cx/type x)
+    (if (com-seq? x)
+      (second x)
       (throw (ex-info "Invalid com." {:object x})))))
 
 (defn- com-conf
@@ -234,7 +244,8 @@ If this condition is not satisfied action is not performed (silently)."}
   (if (com-seq? x)
     (last x)
     (if (com-map? x)
-      (dissoc x :cx/key :cx/value :cx/status :cx/path :cx/system)
+      ;; might not be keyword if com wasn't expanded yet
+      (dissoc x :cx/type :cx/value :cx/status :cx/path :cx/system)
       (throw (ex-info "Invalid com." {:object x})))))
 
 (defn expand-com-seqs [config]
@@ -246,7 +257,7 @@ If this condition is not satisfied action is not performed (silently)."}
                                (not= k :cx/value))
                         (com k v)
                         (if (com-seq? v)
-                          (com (com-key v) (com-conf v))
+                          (clojure.core/apply com (rest v))
                           v)))]
     (walk/postwalk
       #(if (and (vector? %) (= (count %) 2))

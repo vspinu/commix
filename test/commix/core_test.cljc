@@ -61,12 +61,12 @@
   (is (= (cx/expand-com-seqs
            {:a (cx/com ::abc {})
             :b (cx/com {})
-            :c {:cx/key ::abc}
+            :c {:cx/type ::abc}
             ::d {}})
-         {:a {:cx/key :commix.core-test/abc},
-          :b {:cx/key :cx/identity},
-          :c {:cx/key :commix.core-test/abc},
-          :commix.core-test/d {:cx/key :commix.core-test/d}})))
+         {:a {:cx/type :commix.core-test/abc},
+          :b {:cx/type :cx/identity},
+          :c {:cx/type :commix.core-test/abc},
+          :commix.core-test/d {:cx/type :commix.core-test/d}})))
 
 (deftest namespaced-key-shortcut-test
   (let [conf-keys {
@@ -422,10 +422,26 @@
            {[:d]    {:k [[:on] [:on]]
                      :l {:b [:on]
                          :c [:on]}
-                     :cx/key :cx/identity},
+                     :cx/type :cx/identity},
             [:a :b] [:on],
             [:a :c] [:on]}))))
 
+(deftest com-expands-deps-and-merge-configs
+  (is (cx/com ::tt
+        (cx/deps :a ::b [:c ::d])
+        {:foo "bar"
+         :baz "qax"}
+        (cx/deps :x [:y])
+        {:par1 1})
+      {:cx/type ::tt,
+       :a       (cx/ref :a),
+       ::b      (cx/ref ::b),
+       [:c ::d] (cx/ref [:c ::d]),
+       :foo     "bar",
+       :baz     "qax",
+       :x       (cx/ref :x),
+       [:y]     (cx/ref [:y]),
+       :par1    1}))
 
 (deftest com-expands-in-quoted-configs-test
 
@@ -546,24 +562,24 @@
            {:z
             {:a
              {:a 1,
-              :cx/key :commix.core-test/aa,
+              :cx/type :commix.core-test/aa,
               :cx/status :init,
               :cx/value [{:path [:z :a], :status nil, :value nil}]},
              :b
              {:c
               {:b 2,
-               :cx/key :bb,
+               :cx/type :bb,
                :cx/status :init,
                :cx/value [{:path [:z :b :c], :status nil, :value nil}]},
               :d
-              {:cx/key :cx/identity,
+              {:cx/type :cx/identity,
                :cx/status :init,
-               :cx/value {:cx/key :cx/identity}}},
+               :cx/value {:cx/type :cx/identity}}},
              :commix.core-test/d
-             {:cx/key :commix.core-test/d,
+             {:cx/type :commix.core-test/d,
               :cx/status :init,
               :cx/value [{:path [:z :commix.core-test/d], :status nil, :value nil}]},
-             :cx/key :commix.core-test/root,
+             :cx/type :commix.core-test/root,
              :cx/status :init,
              :cx/value [{:path [:z], :status nil, :value nil}]}}))))
 
