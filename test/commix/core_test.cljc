@@ -3,7 +3,8 @@
             [com.stuartsierra.dependency :as dep]
             [clojure.walk :as walk]
             #?(:clj  [clojure.test :refer :all]
-               :cljs [cljs.test :refer-macros [deftest is testing]])))
+               :cljs [cljs.test :refer-macros [deftest is testing]]))
+  #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (defn simplify-keys [config]
   (walk/postwalk #(if (#'cx/namespaced-keyword? %) (keyword (name %)) %) config))
@@ -29,8 +30,8 @@
   (is (= (#'cx/get-refs [(cx/ref :aa) (cx/ref :bb)]) #{[:aa] [:bb]}))
   (is (= (#'cx/get-refs {:a (cx/ref :quax)
                          :b (cx/ref ::sys)
-                         :c (cx/ref [:gr ::grsys1]) 
-                         :d (cx/ref [:gr :grsys2]) 
+                         :c (cx/ref [:gr ::grsys1])
+                         :d (cx/ref [:gr :grsys2])
                          :e [(cx/ref :bbb) (cx/ref :tt) {:f [(cx/ref :aaa)]}]})
          #{[:gr :commix.core-test/grsys1] [:gr :grsys2] [:bbb] [:tt] [:aaa] [:quax]
            [:commix.core-test/sys]})))
@@ -105,7 +106,7 @@
                    :sys4 (cx/com ::sys4
                            {:quax (cx/com ::quax {})})
                    }]
-    
+
 
     (is (= (simplify-keys (#'cx/dependency-graph conf-coms))
            (simplify-keys (#'cx/dependency-graph conf-keys))))
@@ -166,7 +167,7 @@
                         {:tt (cx/ref :gr)})
                 :sys4 (cx/com ::sys4
                         {:quax (cx/com ::quax {})})}]
-    
+
     (is (= (-> config
                (cx/init)
                (cx/halt [[:sys2 :quax]])
@@ -211,7 +212,7 @@
                      {:c (cx/com :tt/d
                            {:d (cx/ref :a)})})}
         sys    (cx/init config)]
-    
+
     (testing "Init"
 
       (is (= {:init #{[:a] [:b] [:b :c]}}
@@ -237,7 +238,7 @@
                  (cx/init :a)
                  (cx/status))
              {nil #{[:b] [:b :c]}, :init #{[:a]}})))
-    
+
     (testing "Init and Halt Interaction"
       (is (= {:init #{[:a] [:b] [:b :c]}}
              (-> sys
@@ -261,7 +262,7 @@
                  (cx/init :b)
                  (cx/status))))
 
-      (is (= {nil #{[:b] [:b :c]}, :halt #{[:a]}} 
+      (is (= {nil #{[:b] [:b :c]}, :halt #{[:a]}}
              (-> config
                  (cx/init :a)
                  (cx/halt)
@@ -274,13 +275,13 @@
                  (cx/suspend)
                  (cx/status))))
 
-      (is (= {:suspend #{[:b] [:b :c]}, :init #{[:a]}} 
+      (is (= {:suspend #{[:b] [:b :c]}, :init #{[:a]}}
              (-> config
                  (cx/init)
                  (cx/suspend [[:b :c]])
                  (cx/status))))
 
-      (is (= {nil #{[:b] [:b :c]}, :suspend #{[:a]}} 
+      (is (= {nil #{[:b] [:b :c]}, :suspend #{[:a]}}
              (-> config
                  (cx/init :a)
                  (cx/suspend)
@@ -293,7 +294,7 @@
                      {:c (cx/com :tt/d
                            {:d (cx/ref :a)})})}
         sys    (cx/init config)]
-    
+
     (testing "Halt"
       (is (= (-> sys
                  (cx/halt :a)
@@ -341,7 +342,7 @@
                  (cx/suspend [[:b :c]])
                  (cx/status))))
 
-      (is (= {nil #{[:b] [:b :c] [:e :f]}, :suspend #{[:a]}} 
+      (is (= {nil #{[:b] [:b :c] [:e :f]}, :suspend #{[:a]}}
              (-> config
                  (cx/init :a)
                  (cx/suspend)
@@ -353,15 +354,14 @@
 
       ;; (cx/status tt)
       ;; (cx/init tt [[:b :c]])
-      
-      (is (thrown-with-msg?
-            #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) #"^Wrong.*"
+
+      (is (thrown-with-msg? ExceptionInfo #"^Wrong.*"
             (-> config
                 (cx/init [[:e :f]])
                 (cx/suspend :a)
                 (cx/init [[:b :c]])
                 (cx/status)))))
-    
+
     (testing "Suspend/resume interactions"
 
       (is (= {:suspend #{[:b] [:e :f]}, :resume #{[:a] [:b :c]}}
@@ -487,7 +487,7 @@
            {[:fancy] [:on]}))
 
     (is (thrown-with-msg?
-          #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) #"^Missing dependency."
+          ExceptionInfo #"^Missing dependency."
           (-> config-no-ref
               (cx/init))))))
 
@@ -540,6 +540,67 @@
             [:x 0 :a] #{[:x 0]},
             [:x 0 :b :c] #{[:x 0]}}))))
 
+
+
+;;; SPECS
+
+#?(:clj
+
+   (cx/with-spec
+     (deftest spec-validation-test
+       (s/def ::boolean boolean?)
+       (s/def ::string string?)
+       (defmethod cx/init-spec ::comp1 [_]
+         (s/keys :req [::boolean]))
+       (defmethod cx/init-spec ::comp2 [_]
+         (s/keys :req [::string ::boolean]))
+
+       (let [conf {:bool true
+                   :x (cx/com ::comp1
+                        {::boolean true})
+                   :y (cx/com ::comp1
+                        {::boolean (cx/ref :bool)})}]
+         (is (= :halt (-> conf cx/init cx/halt (get-in [:x :cx/status])))))
+
+       (let [conf {:bool true
+                   :y (cx/com ::comp2
+                        {::boolean (cx/ref :bool)
+                         ::string "string"})}]
+         (is (= :halt (-> conf cx/init cx/halt (get-in [:y :cx/status])))))
+
+       (let [conf {:bool "string"
+                   :y (cx/com ::comp1
+                        {::boolean (cx/ref :bool)})}]
+         (is (thrown-with-msg?
+               ExceptionInfo #"(?s).*Spec assertion.+:cx/init-com.*"
+               (-> conf cx/init cx/halt))))
+
+       (let [conf {:bool true
+                   :y (cx/com ::comp2
+                        {::boolean (cx/ref :bool)})}]
+         (is (thrown-with-msg?
+               ExceptionInfo #"(?s).*Spec assertion.+:cx/init-com.*"
+               (-> conf cx/init cx/halt))))
+
+       (let [conf {:bool true
+                   :y (cx/com ::comp2
+                        {::boolean (cx/ref :bool)
+                         ::string 1111})}]
+         (is (thrown-with-msg?
+               ExceptionInfo #"(?s).*Spec assertion.+:cx/init-com.*"
+               (-> conf cx/init cx/halt))))
+
+       (defmethod cx/suspend-spec ::com1 [_]
+         (s/keys :req [::string]))
+
+       (let [conf {:x (cx/com ::com1
+                        {::boolean true})}]
+         (is (thrown-with-msg?
+               ExceptionInfo #"(?s).*Spec assertion.+:cx/suspend-com.*"
+               (-> conf cx/init cx/suspend))))
+
+       )))
+
 
 ;;; Following Tests Overwrite :default Methods!!
 
@@ -578,5 +639,3 @@
              :cx/type :commix.core-test/root,
              :cx/status :init,
              :cx/value [{:path [:z], :status nil, :value nil}]}}))))
-
-

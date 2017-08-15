@@ -11,7 +11,8 @@
                      :refer [def-path-action eval apply]
                      :rename {eval eval-macro
                               apply apply-macro
-                              def-path-action def-path-action-macro}])))
+                              def-path-action def-path-action-macro}]))
+  #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 
 (def ^:dynamic *system*
@@ -66,24 +67,24 @@ If this condition is not satisfied action is not performed (silently)."}
 #?(:clj
    (do
 
-     (def ^:private spec-available?
+     (defn- spec-available? []
        (try
          (require '[clojure.spec.alpha :as s]) true
          (catch Throwable _ false)))
 
-     (defmacro when-spec
+     (defmacro with-spec
        {:style/indent 0}
        [& body]
-       (when spec-available?
+       (when (spec-available?)
          `(do ~@body)))
 
      (defmacro spec-assert
        "Call `clojure.spec.alpha/assert` when available.
-  Because speed is never a concern with life-cycle methods, set
-  `clojure.spec.alpha/check-asserts` unconditionally to `true`. You can still
-  disable asserts at copile time by altering `clojure.spec.alpha/*compile-asserts*`."
+  Set `clojure.spec.alpha/check-asserts` unconditionally to `true` as speed is
+  never a concern with life-cycle methods. You can still disable asserts at
+  copile time by altering `clojure.spec.alpha/*compile-asserts*`."
        [spec x]
-       (if spec-available?
+       (if (spec-available?)
          `(let [old-ca# (s/check-asserts?)]
             (s/check-asserts true)
             (try
@@ -91,7 +92,7 @@ If this condition is not satisfied action is not performed (silently)."}
               (finally (s/check-asserts old-ca#))))
          `~x))
 
-     (when-spec
+     (with-spec
        (def ^:private -keys-spec (s/keys))
        (defmethod init-spec :default [_] -keys-spec)
        (defmethod halt-spec :default [_] -keys-spec)
@@ -578,7 +579,7 @@ If this condition is not satisfied action is not performed (silently)."}
       (let [system
             (try
               (action system path)
-              (catch #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo) ex
+              (catch ExceptionInfo ex
                 (reset! *system* system)
                 (throw ex))
               (catch #?(:clj Throwable :cljs :default) ex
