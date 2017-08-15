@@ -8,8 +8,8 @@ script:
   - $CMD
 env:
   - CMD="lein with-profile 1.7 test-all"
-  - CMD="lein with-profile 1.9 do test, test-node"
-  - CMD="lein with-profile 1.9-no-spec do test, test-node"
+  - CMD="lein with-profile 1.9 test-min"
+  - CMD="lein with-profile 1.9-no-spec test-min"
 jdk:
   - openjdk7
   - oraclejdk8

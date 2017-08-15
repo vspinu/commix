@@ -38,5 +38,7 @@
   :aliases {"test-nashorn" ["doo" "nashorn" "test-nashorn" "once"]
             "test-node"    ["doo" "node" "test-node" "once"]
             "test-cljs"    ["do" ["test-nashorn"] ["test-node"]]
+            "test-clj"     ["test" ":only" "commix.core-test"]
             "test"         ["test" ":only" "commix.core-test"]
-            "test-all"     ["do" ["test"] ["test-cljs"]]})
+            "test-min"     ["do" ["test-clj"] ["test-node"]]
+            "test-all"     ["do" ["test-clj"] ["test-node"] ["test-nashorn"]]})
