@@ -151,43 +151,30 @@ _A Simple Example:_
 
 ### Specifying Components
 
-There are 2 ways to declare components:
+Declare components with `cx/com` marker:
 
-1. _Using `cx/com` marker_
+```clojure
+{
+ ;; prototype :ns/key with {} parameter map
+ :A (cx/com :ns/key)
 
-  ```clojure
-  {
-   ;; prototype :ns/key with {} parameter map
-   :A (cx/com :ns/key)
+ ;; with config
+ :B1 (cx/com :ns/key {:param 1}) ; or
+ :B2 (cx/com :ns/key config)
 
-   ;; with config
-   :B1 (cx/com :ns/key {:param 1}) ; or
-   :B2 (cx/com :ns/key config)
+ ;; {:param 1} is merged into config
+ :C (cx/com :ns/key config {:param 1})
 
-   ;; {:param 1} is merged into config
-   :C (cx/com :ns/key config {:param 1})
-
-   ;; :cx/identity prototype which returns itself on initialization
-   :D1 (cx/com {:param 1}) ; is equivalent to
-   :D2 (cx/com :cx/identity {:param 1})
-   }
-  ```
-
-2. _Using Integrant's syntax_
-
-  ```clojure
-  {
-   ;; A namespaced parameter followed by a map is considered a component.
-   ::D1 {:param 1}
-   ;; is equivalent to
-   ::D1 (cx/com ::D1 {:param 1})
-   }
-  ```
-
-Note that the above configurations are valid [edn][]. Commix expands `cx/com`
-markers in quoted lists as if `cx/com` was called directly. Symbols in the
-second argument to `cx/com` are resolved to their value. The following
-statements are equivalent:
+ ;; :cx/identity prototype which returns itself on initialization. Useful to
+ ;; include anynymous sub-systems.
+ :D1 (cx/com {:param 1}) ; is equivalent to
+ :D2 (cx/com :cx/identity {:param 1})
+ }
+```
+Note that all of the above `cx/com` defenitions are valid [edn][]. Commix
+expands `cx/com` markers in quoted lists as if `cx/com` was called
+directly. Symbol arguments to `cx/com` are resolved to their value and must be
+maps. The following statements are equivalent:
 
 ```clojure
 (def com-config {:param 1})

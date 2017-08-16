@@ -256,16 +256,10 @@ If this condition is not satisfied action is not performed (silently)."}
       (throw (ex-info "Invalid com." {:object x})))))
 
 (defn expand-com-seqs [config]
-  (let [expand-kwds (not (-> config meta ::graph)) ; expand only on init
-        expand-v    (fn [[k v]]
-                      (if (and expand-kwds
-                               (namespaced-keyword? k)
-                               (map? v) (not (com-map? v))
-                               (not= k :cx/value))
-                        (com k v)
-                        (if (com-seq? v)
-                          (clojure.core/apply com (rest v))
-                          v)))]
+  (let [expand-v (fn [[k v]]
+                   (if (com-seq? v)
+                     (clojure.core/apply com (rest v))
+                     v))]
     (walk/postwalk
       #(if (and (vector? %) (= (count %) 2))
          (assoc % 1 (expand-v %))

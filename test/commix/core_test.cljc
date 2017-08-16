@@ -59,64 +59,12 @@
            {:a (cx/com ::abc {})
             :b (cx/com {})
             :c {:cx/type ::abc}
-            ::d {}})
+            ::d (cx/com)})
          {:a {:cx/type :commix.core-test/abc},
           :b {:cx/type :cx/identity},
           :c {:cx/type :commix.core-test/abc},
-          :commix.core-test/d {:cx/type :commix.core-test/d}})))
+          :commix.core-test/d {:cx/type :cx/identity}})))
 
-(deftest namespaced-key-shortcut-test
-  (let [conf-keys {
-                   :pars  {:par 1 :bar 2}
-                   :gr    {::grsys1 {:foo 1}
-                           ::grsys2 {:bar 2}}
-                   ::sys  {:foo 1 :bar 1}
-                   ::sys4 {::quax {}}
-                   ::sys2 {:par   4
-                           ::quax {}
-                           ::s    {:a (cx/ref ::quax)
-                                   :b (cx/ref ::sys)
-                                   :d (cx/ref [:gr])
-                                   :e (cx/ref [:pars :par])
-                                   }
-                           }
-                   ::sys3 {:tt (cx/ref :gr)}
-                   }
-
-        conf-coms {
-                   :pars {:par 1 :bar 2}
-                   :gr   {:grsys1 (cx/com ::grsys1
-                                    {:foo 1})
-                          :grsys2 (cx/com ::grsys2
-                                    {:bar 2})}
-                   :sys  (cx/com ::sys
-                           {:foo 1 :bar 1})
-                   :sys2 (cx/com ::sys2
-                           {:par  4
-                            :quax (cx/com ::quax {})
-                            :s    (cx/com ::s
-                                    {:a (cx/ref :quax)
-                                     :b (cx/ref :sys)
-                                     :d (cx/ref [:gr])
-                                     :e (cx/ref [:pars :par])
-                                     })
-                            })
-                   :sys3 (cx/com ::sys3
-                           {:tt (cx/ref :gr)})
-                   :sys4 (cx/com ::sys4
-                           {:quax (cx/com ::quax {})})
-                   }]
-
-
-    (is (= (simplify-keys (#'cx/dependency-graph conf-coms))
-           (simplify-keys (#'cx/dependency-graph conf-keys))))
-
-    ;; (is (= (sort (simplify-keys (cx/init conf-coms)))
-    ;;        (sort (simplify-keys (cx/init conf-keys)))))
-
-    ;; (is (= (sort (simplify-keys (cx/halt (cx/init conf-coms))))
-    ;;        (sort (simplify-keys (cx/halt (cx/init conf-keys))))))
-    ))
 
 
 (deftest quoted-config-equivalence-test
@@ -495,7 +443,7 @@
   (let [conf {:z (cx/com {:a  (cx/com {})
                           :b  {:c (cx/com {})
                                :d (cx/com {})}
-                          ::d {}})}
+                          ::d (cx/com)})}
         dep-graph (#'cx/dependency-graph conf)]
     (is (= (:dependencies dep-graph)
            {[:z] #{[:z :b :c] [:z :b :d] [:z :a] [:z :commix.core-test/d] :commix.core/ROOT},
@@ -512,10 +460,10 @@
             [:z :b :c] #{[:z]}}))))
 
 (deftest dependency-graph-with-vectors-test
-  (let [conf {:x [(cx/com {:a  (cx/com {})
-                           :b  {:c (cx/com {})
-                                :d (cx/com {})}
-                           ::d {}})
+  (let [conf {:x [(cx/com {:a  (cx/com)
+                           :b  {:c (cx/com)
+                                :d (cx/com)}
+                           ::d (cx/com)})
                   (cx/com {:aa 1})]
               :y (cx/com {:aaa (cx/ref [:x 0])})
               :z (cx/com {:aaa (cx/ref [:x 1])})
@@ -613,7 +561,7 @@
                    {:a  (cx/com ::aa {:a 1})
                     :b  {:c (cx/com :bb {:b 2})
                          :d (cx/com {})}
-                    ::d {}})}]
+                    ::d (cx/com ::ddd)})}]
     ;; (cx/init conf))
     (is (= (cx/init conf)
            {:z
@@ -633,7 +581,7 @@
                :cx/status :init,
                :cx/value {:cx/type :cx/identity}}},
              :commix.core-test/d
-             {:cx/type :commix.core-test/d,
+             {:cx/type ::ddd
               :cx/status :init,
               :cx/value [{:path [:z :commix.core-test/d], :status nil, :value nil}]},
              :cx/type :commix.core-test/root,
