@@ -414,25 +414,25 @@ If this condition is not satisfied action is not performed (silently)."}
   (when-let [dp (dep-path-of-a-ref config com-path ref-path)]
     (get-coms-in-path config dp)))
 
-(defn- dependency-graph
+(defn dependency-graph
   "Dependency graph from config."
   [config]
   (let [config (expand-com-seqs config)
         refs   (all-refs (flatten config))]
-    (reduce-kv (fn [g k v]
-                 (if-not (com? (get-in config k))
+    (reduce-kv (fn [g p v]
+                 (if-not (com? (get-in config p))
                    g
                    (reduce (fn [g r]
-                             (if-let [deps (deps-from-ref config k r)]
+                             (if-let [deps (deps-from-ref config p r)]
                                (reduce (fn [g d]
-                                         (dep/depend g k d))
+                                         (dep/depend g p d))
                                        g deps)
-                               (throw (ex-info "Missing dependency."
-                                               {; :call     `(~'deps-from-ref ~'config ~k ~r)
-                                                :ref-key  r
-                                                :component k}))))
+                               (throw (ex-info (format "Missing dependency %s in component %s." r p)
+                                               {; :call     `(~'deps-from-ref ~'config ~p ~r)
+                                                :ref  r
+                                                :component p}))))
                            ;; Need ::ROOT for tracking nodes with no deps
-                           (dep/depend g k ::ROOT)
+                           (dep/depend g p ::ROOT)
                            v)))
                (dep/graph)
                refs)))
@@ -458,7 +458,9 @@ If this condition is not satisfied action is not performed (silently)."}
         nodes))
     ;; system
     (if (map? graph-or-sys)
-      (transitive-dependencies (-> graph-or-sys meta ::graph) paths reverse? exclude-self?)
+      (if-let [graph (-> graph-or-sys meta ::graph)]
+        (transitive-dependencies graph paths reverse? exclude-self?)
+        (throw (ex-info "No dependency metadata." {:system graph-or-sys})))
       (throw (ex-info "Invalid system. Must be a map or a dependency graph." {:supplied graph-or-sys})))))
 
 (defn dependencies [graph-or-sys & [paths exclude-self?]]
