@@ -488,6 +488,30 @@
             [:x 0 :a] #{[:x 0]},
             [:x 0 :b :c] #{[:x 0]}}))))
 
+(deftest dependency-graph-with-nested-vectors-of-components
+
+  (let [conf {:a (cx/com
+                   {:aa [(cx/com :aaa1) (cx/com :aaa2)]})}
+        graph (#'cx/dependency-graph conf)]
+    (is (= (:dependencies graph)
+           {[:a] #{[:a :aa 1] [:a :aa 0] :commix.core/ROOT},
+            [:a :aa 0] #{:commix.core/ROOT},
+            [:a :aa 1] #{:commix.core/ROOT}})))
+
+  (let [conf {:a (cx/com
+                   {:a [(cx/com :aa1) (cx/com :aa2 {:aaa (cx/ref :b)})]
+                    :b (cx/com {:bb1 (cx/ref :y) :bb2 (cx/ref :x)})})
+              :x (cx/com)
+              :y 1}
+        graph (#'cx/dependency-graph conf)]
+    (is (= (:dependencies graph)
+           {[:x] #{:commix.core/ROOT},
+            [:a] #{[:a :b] [:a :a 0] [:a :a 1] :commix.core/ROOT},
+            [:a :a 0] #{:commix.core/ROOT},
+            [:a :a 1] #{[:a :b] :commix.core/ROOT}
+            [:a :b] #{[:x] :commix.core/ROOT},
+            }))))
+
 
 
 ;;; SPECS

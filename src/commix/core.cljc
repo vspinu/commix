@@ -226,8 +226,11 @@ If this condition is not satisfied action is not performed (silently)."}
                       (map expand-deps))
          [key configs] (if (keyword? (first configs))
                          [(first configs) (rest configs)]
-                         [:cx/identity configs])]
-     (clojure.core/apply merge {:cx/type key} configs))))
+                         [nil configs])
+         out (clojure.core/apply merge {:cx/type :cx/identity} configs)]
+     (if key
+       (assoc out :cx/type key)
+       out))))
 
 (defn- com-seq? [x]
   (and (seq? x) (contains? #{'cx/com 'commix.core/com} (first x))))
@@ -338,19 +341,19 @@ If this condition is not satisfied action is not performed (silently)."}
 (defn- get-refs
   "Get set of refs in object v."
   [v & [path]]
-  (let [path (or path [])
+  (let [path        (or path [])
         refs-in-map (fn [v path]
                       (reduce-kv (fn [s k v]
                                    (if (com? v)
                                      (conj s (conj path k))
                                      (into s (get-refs v (conj path k)))))
                                  #{} v))]
-    (cond (ref? v)  #{(ref-key v)}
-          (map? v)  (refs-in-map v path)
-          (coll? v) (set (mapcat get-refs v))
-          :else     #{})))
+    (cond (ref? v)         #{(ref-key v)}
+          (associative? v) (refs-in-map v path)
+          (coll? v)        (set (mapcat get-refs v))
+          :else            #{})))
 
-(defn- all-refs
+(defn all-refs
   "Take in a flat config and return a set of ref paths for each entry."
   [flat-conf]
   (into {}
@@ -644,16 +647,19 @@ If this condition is not satisfied action is not performed (silently)."}
   (:cx/type system))
 
 (defmulti init
-  "Turn config into a system map.
+  "Initialize system.
   Keys are traversed in dependency order and initiated via the init-com."
-  {:arglists '([config] [config paths])}
+  {:arglists '([system] [system paths])}
   system-dispatch-fn)
+
+(defn expand-config [config]
+  (let [config (expand-com-seqs config)
+        graph  (dependency-graph config)]
+    (vary-meta config assoc ::graph graph)))
 
 (defmethod init :default
   ([config & [paths]]
-   (let [config (expand-com-seqs config)
-         graph  (dependency-graph config)
-         system (vary-meta config assoc ::graph graph)
+   (let [system (expand-config config)
          deps   (dependencies system paths)]
      (run-path-action system deps init-path))))
 
