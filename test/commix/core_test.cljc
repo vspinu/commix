@@ -371,6 +371,30 @@
             [:a :b] [:on],
             [:a :c] [:on]}))))
 
+(deftest deps-from-ref-is-non-recursive
+
+  (let [conf {:a (cx/com)
+              :b (cx/com
+                   {:a (cx/ref :a)
+                    :b (cx/ref :b)})
+              :c (cx/com
+                   {:a (cx/com
+                         {:d (cx/ref :a)
+                          :b (cx/ref :b)})})}]
+
+    (is (= (#'cx/deps-from-ref conf [:b] [:a])
+           #{[:a]}))
+
+    (is (nil? (#'cx/deps-from-ref conf [:b] [:b])))
+
+    (is (= (#'cx/deps-from-ref conf [:c :a] [:a])
+           #{[:a]}))
+
+    (is (= (#'cx/deps-from-ref conf [:c :a] [:b])
+           #{[:b]}))
+
+    ))
+
 (deftest nested-vectors-of-components-initialize-correctly
   (let [config {:a (cx/com
                      {:b [(cx/com :tmp/x)

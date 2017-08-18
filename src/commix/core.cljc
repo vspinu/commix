@@ -263,6 +263,7 @@ If this condition is not satisfied action is not performed (silently)."}
                    (if (com-seq? v)
                      (clojure.core/apply com (rest v))
                      v))]
+    ;; FIXME: fragile map entry walk
     (walk/postwalk
       #(if (and (vector? %) (= (count %) 2))
          (assoc % 1 (expand-v %))
@@ -402,10 +403,13 @@ If this condition is not satisfied action is not performed (silently)."}
   {:pre [(vector? ref-path)]}
   (loop [cp com-path]
     (let [rk (into (vec cp) ref-path)]
-      (if (get-in config rk)
+      (if (and
+            (get-in config rk)
+            (not (every? true? (map = rk com-path))))
         rk
         (when (seq cp)
           (recur (butlast cp)))))))
+
 
 (defn- deps-from-ref
   "Get a set of full paths to dpendencies of ref key REF-PATH in CONFIG.
