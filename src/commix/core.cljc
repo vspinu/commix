@@ -459,8 +459,8 @@ If this condition is not satisfied action is not performed (silently)."}
     ;; system
     (if (map? graph-or-sys)
       (if-let [graph (-> graph-or-sys meta ::graph)]
-        (transitive-dependencies graph paths reverse? exclude-self?)
-        (throw (ex-info "No dependency metadata." {:system graph-or-sys})))
+        (recur graph paths reverse? exclude-self?)
+        (recur (dependency-graph graph-or-sys) paths reverse? exclude-self?))
       (throw (ex-info "Invalid system. Must be a map or a dependency graph." {:supplied graph-or-sys})))))
 
 (defn dependencies [graph-or-sys & [paths exclude-self?]]
