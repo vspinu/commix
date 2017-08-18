@@ -398,15 +398,20 @@ If this condition is not satisfied action is not performed (silently)."}
   "Get full dependency path of a ref or nil if no dependency could be found."
   [config com-path ref-path]
   {:pre [(vector? ref-path)]}
-  (loop [cp com-path]
-    (let [rk (into (vec cp) ref-path)]
-      (if (and
-            (get-in config rk)
-            (not (every? true? (map = rk com-path))))
-        rk
-        (when (seq cp)
-          (recur (butlast cp)))))))
-
+  (let [path (into (vec com-path) ref-path)
+        obj (get-in config path)]
+    (if (and obj (com? obj))
+      ;; self-referencing inner component
+      path
+      (loop [cp com-path]
+        (let [rk (into (vec cp) ref-path)]
+          (if (and
+                (get-in config rk)
+                ;; disallow recursive dependencies
+                (not (every? true? (map = rk com-path))))
+            rk
+            (when (seq cp)
+              (recur (butlast cp)))))))))
 
 (defn- deps-from-ref
   "Get a set of full paths to dpendencies of ref key REF-PATH in CONFIG.
