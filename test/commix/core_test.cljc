@@ -357,6 +357,7 @@
                 :d (cx/com {:k [(cx/ref [:a :b])
                                 (cx/ref [:a :c])]
                             :l (cx/ref :a)})}]
+
     (defmethod cx/init-com :tt/z [node]
       (vals (:cx/value node)))
 
@@ -369,6 +370,20 @@
                      :cx/type :cx/identity},
             [:a :b] [:on],
             [:a :c] [:on]}))))
+
+(deftest nested-vectors-of-components-initialize-correctly
+  (let [config {:a (cx/com
+                     {:b [(cx/com :tmp/x)
+                          (cx/com :tmp/y)]})}]
+
+    (defmethod cx/init-com :tmp/x [_] "X")
+    (defmethod cx/init-com :tmp/y [_] "Y")
+    (is (= (-> config
+               (cx/init)
+               (cx/values))
+           {[:a] {:cx/type :cx/identity, :b ["X" "Y"]}
+            [:a :b 0] "X"
+            [:a :b 1] "Y"}))))
 
 (deftest com-expands-deps-and-merge-configs
   (is (cx/com ::tt
@@ -511,7 +526,6 @@
             [:a :a 1] #{[:a :b] :commix.core/ROOT}
             [:a :b] #{[:x] :commix.core/ROOT},
             }))))
-
 
 
 ;;; SPECS

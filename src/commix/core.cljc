@@ -593,30 +593,42 @@ If this condition is not satisfied action is not performed (silently)."}
   (walk/prewalk #(if (com? %) (:cx/value %) %)
                 (get-in system path)))
 
-(defn- filled-com
+(defn- fill-com
   "Fill com at COM-PATH with its dependencies and eval all cx/eval and cx/apply forms."
   [system com-path]
-  (let [filler #(walk/postwalk
-                  (fn [v]
-                    (if (ref? v)
-                      (let [dp (dep-path-of-a-ref system com-path (ref-key v))]
-                        (make-value system dp))
-                      (if (eval-form? v)
-                        (if *allow-eval?*
-                          #?(:clj (clojure.core/eval (cons 'do (pop v)))
-                             :cljs (throw (ex-info "No eval in ClojureScript ." {:form v})))
-                          (throw (ex-info "Evaluation of `cx/eval' forms is disallowed." {:form v})))
-                        (if (apply-form? v)
-                          (if *allow-eval?*
-                            (clojure.core/apply (second v) (pop (pop v)))
-                            (throw (ex-info "Evaluation of `cx/apply' forms is disallowed." {:form v})))
-                          v))))
-                  %)]
-    (filler (get-in system com-path))))
-
+  #dbg ^{:break/when (= com-path [:trades])}
+  (let [com-filler (fn com-filler [com]
+                     (reduce-kv
+                       (fn [c k v]
+                         (cond
+                           (com? v)         (assoc c k (:cx/value v))
+                           (associative? v) (assoc c k (com-filler v))
+                           :else            c))
+                       com
+                       com))
+        ref-filler #(walk/postwalk
+                      (fn [v]
+                        (if (ref? v)
+                          (let [dp (dep-path-of-a-ref system com-path (ref-key v))]
+                            (make-value system dp))
+                          (if (eval-form? v)
+                            (if *allow-eval?*
+                              #?(:clj (clojure.core/eval (cons 'do (pop v)))
+                                 :cljs (throw (ex-info "No eval in ClojureScript ." {:form v})))
+                              (throw (ex-info "Evaluation of `cx/eval' forms is disallowed." {:form v})))
+                            (if (apply-form? v)
+                              (if *allow-eval?*
+                                (clojure.core/apply (second v) (pop (pop v)))
+                                (throw (ex-info "Evaluation of `cx/apply' forms is disallowed." {:form v})))
+                              v))))
+                      %)]
+    (-> (get-in system com-path)
+        (com-filler)
+        (ref-filler))))
 
 (defn- update-value-in [system com-path update-fn spec-in-key spec-out-key]
-  (let [com       (-> (filled-com system com-path)
+  #dbg ^{:break/when (= com-path [:trades])}
+  (let [com       (-> (fill-com system com-path)
                       (assoc :cx/system system
                              :cx/path com-path))
         new-value (->> com
