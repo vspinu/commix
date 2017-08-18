@@ -183,8 +183,10 @@ If this condition is not satisfied action is not performed (silently)."}
 
 (defn- expand-symbol [sym]
   (if (symbol? sym)
-    #?(:clj (var-get (resolve sym))
-       :cljs (throw (js/Error. "Cannot resolve symbols in clojurescript.")))
+    #?(:clj (if-let [var (resolve sym)]
+              (var-get var)
+              (throw (ex-info (format "Cannot resolve symbol %s." sym) {:sym sym})))
+       :cljs (throw (ex-info "Cannot resolve symbols in clojurescript." {:sym sym})))
     sym))
 
 (declare ref)
