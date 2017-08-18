@@ -55,15 +55,34 @@
            #{}))))
 
 (deftest expand-com-seqs-test
-  (is (= (cx/expand-com-seqs
+  (def tcom (cx/com ::tcom {:a 1}))
+
+  (is (= (#'cx/expand-com-seqs
            {:a (cx/com ::abc {})
             :b (cx/com {})
             :c {:cx/type ::abc}
-            ::d (cx/com)})
+            ::d (cx/com)
+            :e [(cx/com ::abc)
+                (cx/com ::abc)]})
          {:a {:cx/type :commix.core-test/abc},
           :b {:cx/type :cx/identity},
           :c {:cx/type :commix.core-test/abc},
-          :commix.core-test/d {:cx/type :cx/identity}})))
+          :commix.core-test/d {:cx/type :cx/identity},
+          :e [{:cx/type :commix.core-test/abc} {:cx/type :commix.core-test/abc}]}))
+
+  #?(:clj
+     (is (= (#'cx/expand-com-seqs
+              {:f (cx/com `tcom)
+               :g `(cx/com tcom)
+               :h [(cx/com `tcom)
+                   `(cx/com tcom)]
+               :i `[(cx/com tcom)
+                    (cx/com ::abc)]
+               })
+            {:f {:cx/type :commix.core-test/tcom, :a 1},
+             :g {:cx/type :commix.core-test/tcom, :a 1},
+             :h [{:cx/type :commix.core-test/tcom, :a 1} {:cx/type :commix.core-test/tcom, :a 1}]
+             :i [{:cx/type :commix.core-test/tcom, :a 1} {:cx/type :commix.core-test/abc}]}))))
 
 
 
@@ -296,13 +315,6 @@
                  (cx/suspend)
                  (cx/status))))
 
-      (def tt (-> config
-                  (cx/init [[:e :f]])
-                  (cx/suspend :a)))
-
-      ;; (cx/status tt)
-      ;; (cx/init tt [[:b :c]])
-
       (is (thrown-with-msg? ExceptionInfo #"^Wrong.*"
             (-> config
                 (cx/init [[:e :f]])
@@ -446,19 +458,19 @@
            (cx/init {:A '(cx/com :ns/name {:param 1})}))))
   #?(:clj
      (is (=
-           (cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
-           (cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
-           (cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})
-           (cx/expand-com-seqs `{:A (cx/com :ns/name com-config)})
-           (cx/expand-com-seqs {:A `(cx/com :ns/name com-config)})
-           (cx/expand-com-seqs {:A (cx/com :ns/name `com-config)})
-           #?(:clj (cx/expand-com-seqs (read-string "{:A (cx/com :ns/name {:param 1})}")))
+           (#'cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})
+           (#'cx/expand-com-seqs `{:A (cx/com :ns/name com-config)})
+           (#'cx/expand-com-seqs {:A `(cx/com :ns/name com-config)})
+           (#'cx/expand-com-seqs {:A (cx/com :ns/name `com-config)})
+           #?(:clj (#'cx/expand-com-seqs (read-string "{:A (cx/com :ns/name {:param 1})}")))
            ))
      :cljs
      (is (=
-           (cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
-           (cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
-           (cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})))))
+           (#'cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})))))
 
 (deftest modules-test
 

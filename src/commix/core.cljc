@@ -260,17 +260,12 @@ If this condition is not satisfied action is not performed (silently)."}
       (dissoc x :cx/type :cx/value :cx/status :cx/path :cx/system)
       (throw (ex-info "Invalid com." {:object x})))))
 
-(defn expand-com-seqs [config]
-  (let [expand-v (fn [[k v]]
-                   (if (com-seq? v)
-                     (clojure.core/apply com (rest v))
-                     v))]
-    ;; FIXME: fragile map entry walk
-    (walk/postwalk
-      #(if (and (vector? %) (= (count %) 2))
-         (assoc % 1 (expand-v %))
-         %)
-      config)))
+(defn- expand-com-seqs [config]
+  (walk/postwalk
+    #(if (com-seq? %)
+       (clojure.core/apply com (rest %))
+       %)
+    config))
 
 (defn- get-coms-in-path
   "Retrieve the set of dependencies in `path'."
@@ -602,7 +597,6 @@ If this condition is not satisfied action is not performed (silently)."}
 (defn- fill-com
   "Fill com at COM-PATH with its dependencies and eval all cx/eval and cx/apply forms."
   [system com-path]
-  #dbg ^{:break/when (= com-path [:trades])}
   (let [com-filler (fn com-filler [com]
                      (reduce-kv
                        (fn [c k v]
@@ -633,7 +627,6 @@ If this condition is not satisfied action is not performed (silently)."}
         (ref-filler))))
 
 (defn- update-value-in [system com-path update-fn spec-in-key spec-out-key]
-  #dbg ^{:break/when (= com-path [:trades])}
   (let [com       (-> (fill-com system com-path)
                       (assoc :cx/system system
                              :cx/path com-path))
