@@ -11,10 +11,12 @@
          (do
            (#'commix.core/check-deps-status system-arg# com-path-arg# action-class# false)
            (#'commix.core/check-deps-status system-arg# com-path-arg# action-class# true)
-           (let [system-arg# (try
-                               ~@body
-                               (catch #?(:clj Throwable :cljs :default) ex#
-                                   (throw (#'commix.core/action-exception system-arg# com-path-arg# action-class# ex#))))]
+           (let [system-arg# (do ~@body)
+                 ;; ??? the following results in cljs "ReferenceError: java is not defined"
+                 #_(try
+                     ~@body
+                     (catch #?(:clj Exception :cljs :default) ex#
+                       (throw (#'commix.core/action-exception system-arg# com-path-arg# action-class# ex#))))]
              (assoc-in system-arg# (conj com-path-arg# :cx/status) action-class#)))
          system-arg#))))
 
@@ -30,4 +32,3 @@
   "Create a form which behaves as function application during Commix dependency substitution."
   [f & args]
   `(quote (cx/apply ~f ~@args)))
-

@@ -607,12 +607,6 @@ If this condition is not satisfied action is not performed (silently)."}
       (let [system
             (try
               (action system path)
-              (catch ExceptionInfo ex
-                (reset! *system* system)
-                (throw ex))
-              (catch #?(:clj Throwable :cljs :default) ex
-                (reset! *system* system)
-                (throw (action-exception system path :unknown ex)))
               (finally
                 (reset! *system* system)))]
         (recur (cons path completed) paths system)))))
