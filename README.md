@@ -17,6 +17,7 @@ systems - [Component][], [Mount][] and [Integrant][].
 [component]: https://github.com/stuartsierra/component
 [mount]: https://github.com/tolitius/mount
 [integrant]:https://github.com/weavejester/integrant
+[clojure.spec]:https://clojure.org/guides/spec
 [dif-integrant]:https://github.com/vspinu/commix/wiki/Differences-with-Integrant
 
 ## Rationale
@@ -197,28 +198,31 @@ maps. The following statements are equivalent:
 _Note on type vs identity_:
 
 The `:cx/anonymous` shortcut (`::F` in earlier definitions) confounds type and
-identity - same keyword names both, the type (class) of a component and the
+identity - a keyword names both, the type (class) of a component and the
 concrete instance of the component (identity). Such overloaded semantics is
-promoted by `clojure.spec` and is generally harmless as long as the system
-contains only one instance of a component per component type. In systems with
-multiple components per type you will have to give distinct names to them.
+promoted by [clojure.spec][] and [Integrant][], and works fine as long as the
+system contains only one instance of a component per component type. In systems
+with multiple components per type you will have to provide distinct names for
+them.
 
-It's generally clearer to write
+It's surely a matter of style, but it's often cleaner to write
 
 ```clojure
 {:foo (cx/com :some.ns/foo {,,,})
  :bar (cx/com :other.ns/bar
-        {:foo (cx/ref :foo)})}
+        {:par (cx/ref :foo)})}
 ```
 
-than
+where `:foo` refers to the component within the system, and `:some.ns/foo`
+refers to the whole class of components with the similar behavior, instead of
 
 ```clojure
 {:some.ns/foo (cx/com :some.ns/foo {,,,})
  :other.ns/bar (cx/com :other.ns/bar
-                 {:foo (cx/ref :some.ns/foo)})}
+                 {:par (cx/ref :some.ns/foo)})}
 ```
 
+where `:some.ns/foo` refers to both.
 
 ### Specifying References
 
