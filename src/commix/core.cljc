@@ -209,7 +209,8 @@ If this condition is not satisfied action is not performed (silently)."}
 (defn com
   "Create a component from a key and a config map.
   All `configs` are merged. Each `config' can be a symbol, in which case it is
-  automatically resolved.
+  automatically resolved. If the type key is missing, component is of
+  type :cx/anonymous.
 
   (cx/com :ns/key {:param 1})
 
@@ -219,9 +220,15 @@ If this condition is not satisfied action is not performed (silently)."}
   (cx/com :ns/key config {:param 1}) ; merge {:param 1} into config
 
   (cx/com {:param 1})     ; is equivalent to
-  (cx/com :cx/identity {:param 1})"
-  {:style/indent :defn
-   :arglists '([key & configs] [& configs])}
+  (cx/com :cx/anonymous {:param 1})
+
+  Anonymous component gets its type from its name in the config map. For example
+  {:ns/foo (cx/com)} is equivalent to {:ns/foo (cx/com :ns/foo)}. Please note
+  that this shortcut confounds an entity (instance of a component) with its
+  type. Such double meaning of the keywords is promoted by `clojure.spec` and
+  `integrant`, but might easily lead to confusion in the context of system
+  design."
+  {:style/indent :defn :arglists '([key & configs] [& configs])}
   ([& configs]
    (let [configs (->> configs
                       (map expand-symbol)
@@ -229,7 +236,7 @@ If this condition is not satisfied action is not performed (silently)."}
          [key configs] (if (keyword? (first configs))
                          [(first configs) (rest configs)]
                          [nil configs])
-         out (clojure.core/apply merge {:cx/type :cx/identity} configs)]
+         out (clojure.core/apply merge {:cx/type :cx/anonymous} configs)]
      (if key
        (assoc out :cx/type key)
        out))))
@@ -260,12 +267,25 @@ If this condition is not satisfied action is not performed (silently)."}
       (dissoc x :cx/type :cx/value :cx/status :cx/path :cx/system)
       (throw (ex-info "Invalid com." {:object x})))))
 
-(defn- expand-com-seqs [config]
-  (walk/postwalk
-    #(if (com-seq? %)
-       (clojure.core/apply com (rest %))
-       %)
+(defn- expand-anonymous-coms [config]
+  (if (map? config)
+    (reduce-kv
+      (fn [c k v]
+        (if (and (com? v)
+                 (= (:cx/type v) :cx/anonymous))
+          (let [v' (assoc v :cx/type k)]
+            (assoc c k (expand-anonymous-coms v')))
+          (assoc c k (expand-anonymous-coms v))))
+      config
+      config)
     config))
+
+(defn- expand-coms [config]
+  (->> config
+       (walk/postwalk #(if (com-seq? %)
+                         (clojure.core/apply com (rest %))
+                         %))
+       (expand-anonymous-coms)))
 
 (defn- get-coms-in-path
   "Retrieve the set of dependencies in `path'."
@@ -304,7 +324,7 @@ If this condition is not satisfied action is not performed (silently)."}
      function will attempt to load the namespaces foo.bar and foo.bar.baz. Upon
      completion, a list of all loaded namespaces will be returned."
        [config]
-       (let [config (expand-com-seqs config)
+       (let [config (expand-coms config)
              keys   (volatile! [])]
          (walk/postwalk (fn [v]
                           (if (com-map? v)
@@ -423,7 +443,7 @@ If this condition is not satisfied action is not performed (silently)."}
 (defn dependency-graph
   "Dependency graph from config."
   [config]
-  (let [config (expand-com-seqs config)
+  (let [config (expand-coms config)
         refs   (all-refs (flatten config))]
     (reduce-kv (fn [g p v]
                  (if-not (com? (get-in config p))
@@ -492,6 +512,9 @@ If this condition is not satisfied action is not performed (silently)."}
   ;; Not dissoccing other special keys. Would need to dissoc recursively for
   ;; other nested :cx/identity components.
   (dissoc com :cx/path :cx/system))
+
+(defmethod init-com :cx/anonymous [com]
+  (throw (ex-info "Anonymous component in system map." {:com (dissoc com :cx/system)})))
 
 (defmulti halt-com
   "Halt a running or suspended com.
@@ -671,7 +694,7 @@ If this condition is not satisfied action is not performed (silently)."}
   system-dispatch-fn)
 
 (defn expand-config [config]
-  (let [config (expand-com-seqs config)
+  (let [config (expand-coms config)
         graph  (dependency-graph config)]
     (vary-meta config assoc ::graph graph)))
 

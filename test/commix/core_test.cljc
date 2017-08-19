@@ -54,12 +54,12 @@
     (is (= (#'cx/deps-from-ref conf [:x :z] [:x :w :v])
            #{}))))
 
-(deftest expand-com-seqs-test
+(deftest expand-coms-test
   (def tcom (cx/com ::tcom {:a 1}))
 
-  (is (= (#'cx/expand-com-seqs
+  (is (= (#'cx/expand-coms
            {:a (cx/com ::abc {})
-            :b (cx/com {})
+            :b (cx/com :cx/identity {})
             :c {:cx/type ::abc}
             ::d (cx/com)
             :e [(cx/com ::abc)
@@ -67,11 +67,11 @@
          {:a {:cx/type :commix.core-test/abc},
           :b {:cx/type :cx/identity},
           :c {:cx/type :commix.core-test/abc},
-          :commix.core-test/d {:cx/type :cx/identity},
+          :commix.core-test/d {:cx/type ::d},
           :e [{:cx/type :commix.core-test/abc} {:cx/type :commix.core-test/abc}]}))
 
   #?(:clj
-     (is (= (#'cx/expand-com-seqs
+     (is (= (#'cx/expand-coms
               {:f (cx/com `tcom)
                :g `(cx/com tcom)
                :h [(cx/com `tcom)
@@ -84,6 +84,23 @@
              :h [{:cx/type :commix.core-test/tcom, :a 1} {:cx/type :commix.core-test/tcom, :a 1}]
              :i [{:cx/type :commix.core-test/tcom, :a 1} {:cx/type :commix.core-test/abc}]}))))
 
+(deftest expand-coms-anonymous-test
+
+  (is (= (#'cx/expand-coms
+           {::a (cx/com)})
+         {::a {:cx/type ::a}}))
+
+  (is (= (#'cx/expand-coms
+           {:a (cx/com ::a
+                 {::bb (cx/com)})})
+         {:a {:cx/type ::a
+              ::bb {:cx/type ::bb}}}))
+
+  (is (thrown-with-msg? ExceptionInfo #"Anonymous component"
+                        (cx/init {:a [(cx/com)]
+                                  :b (cx/com)})))
+
+  )
 
 
 (deftest quoted-config-equivalence-test
@@ -366,9 +383,10 @@
 (deftest nested-parameters-test
   (let [config {:a {:b (cx/com :tt/x)
                     :c (cx/com :tt/y)}
-                :d (cx/com {:k [(cx/ref [:a :b])
-                                (cx/ref [:a :c])]
-                            :l (cx/ref :a)})}]
+                :d (cx/com :cx/identity
+                     {:k [(cx/ref [:a :b])
+                          (cx/ref [:a :c])]
+                      :l (cx/ref :a)})}]
 
     (defmethod cx/init-com :tt/z [node]
       (vals (:cx/value node)))
@@ -408,7 +426,7 @@
     ))
 
 (deftest nested-vectors-of-components-initialize-correctly
-  (let [config {:a (cx/com
+  (let [config {:a (cx/com :cx/identity
                      {:b [(cx/com :tmp/x)
                           (cx/com :tmp/y)]})}]
 
@@ -458,19 +476,19 @@
            (cx/init {:A '(cx/com :ns/name {:param 1})}))))
   #?(:clj
      (is (=
-           (#'cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
-           (#'cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
-           (#'cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})
-           (#'cx/expand-com-seqs `{:A (cx/com :ns/name com-config)})
-           (#'cx/expand-com-seqs {:A `(cx/com :ns/name com-config)})
-           (#'cx/expand-com-seqs {:A (cx/com :ns/name `com-config)})
-           #?(:clj (#'cx/expand-com-seqs (read-string "{:A (cx/com :ns/name {:param 1})}")))
+           (#'cx/expand-coms {:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-coms `{:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-coms {:A '(cx/com :ns/name {:param 1})})
+           (#'cx/expand-coms `{:A (cx/com :ns/name com-config)})
+           (#'cx/expand-coms {:A `(cx/com :ns/name com-config)})
+           (#'cx/expand-coms {:A (cx/com :ns/name `com-config)})
+           #?(:clj (#'cx/expand-coms (read-string "{:A (cx/com :ns/name {:param 1})}")))
            ))
      :cljs
      (is (=
-           (#'cx/expand-com-seqs {:A (cx/com :ns/name {:param 1})})
-           (#'cx/expand-com-seqs `{:A (cx/com :ns/name {:param 1})})
-           (#'cx/expand-com-seqs {:A '(cx/com :ns/name {:param 1})})))))
+           (#'cx/expand-coms {:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-coms `{:A (cx/com :ns/name {:param 1})})
+           (#'cx/expand-coms {:A '(cx/com :ns/name {:param 1})})))))
 
 (deftest modules-test
 
@@ -634,7 +652,7 @@
   (let [conf {:z (cx/com ::root
                    {:a  (cx/com ::aa {:a 1})
                     :b  {:c (cx/com :bb {:b 2})
-                         :d (cx/com {})}
+                         :d (cx/com :cx/identity {})}
                     ::d (cx/com ::ddd)})}]
     ;; (cx/init conf))
     (is (= (cx/init conf)

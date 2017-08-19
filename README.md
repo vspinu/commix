@@ -167,11 +167,15 @@ Declare components with `cx/com` marker:
 
  ;; :cx/identity prototype which returns itself on initialization. Useful to
  ;; include anynymous sub-systems.
- :D1 (cx/com {:param 1}) ; is equivalent to
- :D2 (cx/com :cx/identity {:param 1})
+ :D (cx/com :cx/identity sub-system)
+
+ ;; :cx/anonymous prototype which picks the type from its name.
+ ::F (cx/com {:param 1}) ; is equivalent to
+ ::F (cx/com ::F {:param 1})
  }
 ```
-Note that all of the above `cx/com` defenitions are valid [edn][]. Commix
+
+Also note that all of the above `cx/com` defenitions are valid [edn][]. Commix
 expands `cx/com` markers in quoted lists as if `cx/com` was called
 directly. Symbol arguments to `cx/com` are resolved to their value and must be
 maps. The following statements are equivalent:
@@ -189,6 +193,32 @@ maps. The following statements are equivalent:
 (cx/init (read-string "{:A (cx/com :ns/name com-config)}"))
 (cx/init (edn/read-string "{:A (cx/com :ns/name com-config)}"))
 ```
+
+_Note on type vs identity_:
+
+The `:cx/anonymous` shortcut (`::F` in earlier definitions) confounds type and
+identity - same keyword names both, the type (class) of a component and the
+concrete instance of the component (identity). Such overloaded semantics is
+promoted by `clojure.spec` and is generally harmless as long as the system
+contains only one instance of a component per component type. In systems with
+multiple components per type you will have to give distinct names to them.
+
+It's generally clearer to write
+
+```clojure
+{:foo (cx/com :some.ns/foo {,,,})
+ :bar (cx/com :other.ns/bar
+        {:foo (cx/ref :foo)})}
+```
+
+than
+
+```clojure
+{:some.ns/foo (cx/com :some.ns/foo {,,,})
+ :other.ns/bar (cx/com :other.ns/bar
+                 {:foo (cx/ref :some.ns/foo)})}
+```
+
 
 ### Specifying References
 
